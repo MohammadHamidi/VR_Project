@@ -2,8 +2,16 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.Events;
 
-public class Player_Direction_Change : MonoBehaviour
+public interface animatable
+{
+    public UnityEvent type { get; set; }        
+    void Animate();
+}
+
+
+public class Player_Direction_Change : MonoBehaviour,animatable
 {
     [SerializeField] private Transform playerTranform;
     [SerializeField] private Transform StartPoint;
@@ -31,9 +39,15 @@ public class Player_Direction_Change : MonoBehaviour
     {
         var maxdif = bridgeWidth / 2;
         var dif=CenterofBridge.position.x-playerTranform.position.x;
+        
         return dif / maxdif;
     }
-    
 
 
+    public UnityEvent type { get; set; }
+
+    public void Animate()
+    {
+        type.Invoke();
+    }
 }

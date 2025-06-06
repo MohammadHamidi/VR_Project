@@ -396,6 +396,14 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 6348439248473348877, guid: a82e3a6cd236c40e2989fbfef31f5299, type: 3}
+      propertyPath: m_HapticSelectEnterIntensity
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6348439248473348877, guid: a82e3a6cd236c40e2989fbfef31f5299, type: 3}
+      propertyPath: m_PlayHapticsOnSelectEntered
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 8197019796777977466, guid: a82e3a6cd236c40e2989fbfef31f5299, type: 3}
       propertyPath: m_LocalPosition.z
       value: -3
@@ -1479,7 +1487,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!64 &1921754340
 MeshCollider:
   m_ObjectHideFlags: 0
