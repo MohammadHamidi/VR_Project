@@ -14,18 +14,26 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   xrRigPrefab: {fileID: 2453629302325982545, guid: a82e3a6cd236c40e2989fbfef31f5299, type: 3}
   uiControllerPrefab: {fileID: 471150785547529671, guid: b3cff934822ce4d869d852f85de02c28, type: 3}
-  environmentPrefabs:
-  - {fileID: 1005246215909731498, guid: 95d56d0fed107445b87a3685b245df94, type: 3}
+  environmentPrefabs: []
   defaultEnvironmentIndex: 0
+  autoGenerateEnvironment: 1
+  generationSeed: 123
+  generationExclusionRadius: 9.73
+  generationAreaOffsetXZ: 1.85
+  generationDensity: 0.75
+  primitiveChunkSize: {x: 2, y: 2, z: 2}
+  sizeVariation: 0.379
+  chunkHeightRange: {x: 0, y: 0}
+  generatedPrimitiveTypes:
+  - type: 0
+    prefab: {fileID: 8066033405376995998, guid: 5a0e8faea4b610346a3eac33613fb0c1, type: 3}
   ballPrefab: {fileID: 8774105223417190858, guid: 66db2c39e6e874b0eae9318cfd6d37dd, type: 3}
-  ballSpawnPosition: {x: 0, y: 0.5, z: 0.5}
-  respawnDelay: 1
+  ballSpawnPosition: {x: 32.63721, y: 0, z: 95.781456}
+  respawnDelay: 0.1
   respawnZonePrefab: {fileID: 111596060587745638, guid: 01c12db87ce9d413dba8193dea9b3740, type: 3}
   respawnZonePosition: {x: 0, y: 0, z: 0}
   ringPrefab: {fileID: 9164512224790044594, guid: b34b66dc0179241f0b2f9146ea16868c, type: 3}
   ringPositions:
-  - {x: 1, y: 2, z: 10}
-  - {x: 0, y: 3, z: 10}
-  - {x: -1, y: 4, z: 10}
-  stageTime: 60
+  - {x: 89.05968, y: 0, z: 9.031912}
+  stageTime: 10
   enableTimer: 0
