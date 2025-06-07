@@ -1,244 +1,71 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using TMPro;
-using CombatSystem.Pooling;
-using CombatSystem.Events;
-using CombatSystem.Obstacles;
-using CombatSystem.Collectibles;
 
-namespace CombatSystem.Management
+public class CombatStageManager : MonoBehaviour
 {
-    public class CombatStageManager : MonoBehaviour
+    [Header("Game Settings")]
+    [Tooltip("Total length of the combat round in seconds.")]
+    public float gameDuration = 90f;
+
+    private float _timeRemaining;
+    private bool  _gameActive = false;
+
+    private ScoreManager       _scoreManager;
+    private CombatUIController _uiController;
+
+    void Start()
     {
-        public static CombatStageManager Instance { get; private set; }
+        _timeRemaining = gameDuration;
+        _gameActive    = true;
 
-        [Header("Prefab References")]
-        [SerializeField] private CubeMover cubePrefab;
-        [SerializeField] private CoinPickup coinPrefab;
+        _scoreManager = FindObjectOfType<ScoreManager>();
+        if (_scoreManager == null)
+            Debug.LogError("[CombatStageManager] No ScoreManager found in scene.");
 
-        [Header("Spawn Configuration")]
-        [SerializeField] private Transform[] spawnRails;
-        [SerializeField] private Vector3 spawnOffset = new Vector3(0, 1, 10);
-        [SerializeField] private float baseSpawnInterval = 2f;
-        [SerializeField] private float difficultyIncrement = 0.05f;
-        [SerializeField] private float minSpawnInterval = 0.5f;
+        _uiController = FindObjectOfType<CombatUIController>();
+        if (_uiController == null)
+            Debug.LogError("[CombatStageManager] No CombatUIController found in scene.");
 
-        [Header("UI References")]
-        [SerializeField] private TextMeshProUGUI coinText;
-        [SerializeField] private TextMeshProUGUI scoreText;
-        [SerializeField] private TextMeshProUGUI debugText;
+        // Initialize UI to 0
+        _uiController.UpdateScore(0);
+        _uiController.UpdateTimer(_timeRemaining);
+        _uiController.UpdateCombo(1);
+        _uiController.UpdateHealth(3);
+    }
 
-        [Header("Performance Settings")]
-        [SerializeField] private int cubePoolSize = 20;
-        [SerializeField] private int coinPoolSize = 15;
+    void Update()
+    {
+        if (!_gameActive) return;
 
-        // Object Pools
-        private ObjectPool<CubeMover> _cubePool;
-        private ObjectPool<CoinPickup> _coinPool;
+        _timeRemaining -= Time.deltaTime;
+        if (_timeRemaining < 0f) _timeRemaining = 0f;
 
-        // Active tracking
-        private readonly HashSet<CubeMover> _activeCubesInDodgeZone = new HashSet<CubeMover>();
-        private readonly List<CubeMover> _cubesToRemove = new List<CubeMover>();
+        _uiController.UpdateTimer(_timeRemaining);
 
-        // Game State
-        private int _coins = 0;
-        private int _score = 0;
-        private float _currentSpawnInterval;
-        private Coroutine _spawnCoroutine;
-
-        void Awake()
+        if (_timeRemaining <= 0f)
         {
-            if (Instance != null && Instance != this)
-            {
-                Destroy(gameObject);
-                return;
-            }
-            Instance = this;
+            _gameActive = false;
+            EndGame();
         }
+    }
 
-        void Start()
+    /// <summary>
+    /// Called by SquatDetector whenever the player squats.
+    /// Awards 10 points per squat.
+    /// </summary>
+    public void PlayerSquatted()
+    {
+        if (!_gameActive) return;
+
+        if (_scoreManager != null)
         {
-            InitializePools();
-            InitializeGameState();
-            SubscribeToEvents();
-            StartGameLoop();
+            _scoreManager.AddScore(10);
+            _uiController.UpdateScore(_scoreManager.currentScore);
         }
+    }
 
-        void OnDestroy()
-        {
-            UnsubscribeFromEvents();
-            if (Instance == this)
-                Instance = null;
-        }
-
-        #region Initialization
-        private void InitializePools()
-        {
-            var cubeParent = new GameObject("CubePool").transform;
-            var coinParent = new GameObject("CoinPool").transform;
-            cubeParent.SetParent(transform);
-            coinParent.SetParent(transform);
-
-            _cubePool = new ObjectPool<CubeMover>(cubePrefab, cubeParent, cubePoolSize);
-            _coinPool = new ObjectPool<CoinPickup>(coinPrefab, coinParent, coinPoolSize);
-        }
-
-        private void InitializeGameState()
-        {
-            _currentSpawnInterval = baseSpawnInterval;
-            UpdateUI();
-        }
-
-        private void SubscribeToEvents()
-        {
-            CombatEvents.OnPlayerDodge += HandlePlayerDodge;
-            CombatEvents.OnCubeEnterDodgeZone += HandleCubeEnterDodgeZone;
-            CombatEvents.OnCubeExitDodgeZone += HandleCubeExitDodgeZone;
-            CombatEvents.OnCubeDestroyed += HandleCubeDestroyed;
-            CombatEvents.OnCoinCollected += HandleCoinCollected;
-        }
-
-        private void UnsubscribeFromEvents()
-        {
-            CombatEvents.OnPlayerDodge -= HandlePlayerDodge;
-            CombatEvents.OnCubeEnterDodgeZone -= HandleCubeEnterDodgeZone;
-            CombatEvents.OnCubeExitDodgeZone -= HandleCubeExitDodgeZone;
-            CombatEvents.OnCubeDestroyed -= HandleCubeDestroyed;
-            CombatEvents.OnCoinCollected -= HandleCoinCollected;
-        }
-        #endregion
-
-        #region Game Loop
-        private void StartGameLoop()
-        {
-            _spawnCoroutine = StartCoroutine(SpawnCubesRoutine());
-        }
-
-        private IEnumerator SpawnCubesRoutine()
-        {
-            while (true)
-            {
-                yield return new WaitForSeconds(_currentSpawnInterval);
-                SpawnCube();
-                IncreaseDifficulty();
-            }
-        }
-
-        private void SpawnCube()
-        {
-            if (spawnRails.Length == 0) return;
-
-            var rail = spawnRails[Random.Range(0, spawnRails.Length)];
-            var spawnPosition = rail.position + spawnOffset;
-            
-            var cube = _cubePool.Get();
-            cube.transform.position = spawnPosition;
-            cube.transform.SetParent(rail);
-        }
-
-        private void IncreaseDifficulty()
-        {
-            _currentSpawnInterval = Mathf.Max(
-                _currentSpawnInterval - difficultyIncrement,
-                minSpawnInterval
-            );
-        }
-        #endregion
-
-        #region Event Handlers
-        private void HandlePlayerDodge()
-        {
-            if (_activeCubesInDodgeZone.Count == 0) return;
-
-            int destroyedCount = 0;
-            _cubesToRemove.Clear();
-
-            foreach (var cube in _activeCubesInDodgeZone)
-            {
-                if (cube != null && !cube.WasDestroyed)
-                {
-                    cube.DestroyAndSpawnCoin();
-                    _cubesToRemove.Add(cube);
-                    destroyedCount++;
-                }
-            }
-
-            foreach (var cube in _cubesToRemove)
-            {
-                _activeCubesInDodgeZone.Remove(cube);
-            }
-
-            int bonusPoints = destroyedCount > 1 ? (destroyedCount - 1) * 10 : 0;
-            AddScore(destroyedCount * 10 + bonusPoints);
-        }
-
-        private void HandleCubeEnterDodgeZone(CubeMover cube)
-        {
-            _activeCubesInDodgeZone.Add(cube);
-            UpdateDebugUI();
-        }
-
-        private void HandleCubeExitDodgeZone(CubeMover cube)
-        {
-            _activeCubesInDodgeZone.Remove(cube);
-            UpdateDebugUI();
-        }
-
-        private void HandleCubeDestroyed(Vector3 position)
-        {
-            SpawnCoin(position);
-        }
-
-        private void HandleCoinCollected(int value)
-        {
-            AddCoins(value);
-            AddScore(value * 5);
-        }
-        #endregion
-
-        #region Game State Management
-        private void SpawnCoin(Vector3 position)
-        {
-            var coin = _coinPool.Get();
-            coin.transform.position = position + Vector3.up * 0.5f;
-        }
-
-        public void AddCoins(int value)
-        {
-            _coins += value;
-            UpdateUI();
-        }
-
-        public void AddScore(int points)
-        {
-            _score += points;
-            UpdateUI();
-        }
-
-        private void UpdateUI()
-        {
-            if (coinText != null)
-                coinText.text = $"Coins: {_coins}";
-            
-            if (scoreText != null)
-                scoreText.text = $"Score: {_score}";
-        }
-
-        private void UpdateDebugUI()
-        {
-            if (debugText != null)
-                debugText.text = $"Cubes in Zone: {_activeCubesInDodgeZone.Count}\nSpawn Interval: {_currentSpawnInterval:F2}s";
-        }
-        #endregion
-
-        public void ResetGame()
-        {
-            _coins = 0;
-            _score = 0;
-            _currentSpawnInterval = baseSpawnInterval;
-            _activeCubesInDodgeZone.Clear();
-            UpdateUI();
-        }
+    private void EndGame()
+    {
+        Debug.Log($"[CombatStageManager] Combat Game Over! Final Score: {_scoreManager.currentScore}");
+        // TODO: Show a “Game Over” panel or load next scene.
     }
 }

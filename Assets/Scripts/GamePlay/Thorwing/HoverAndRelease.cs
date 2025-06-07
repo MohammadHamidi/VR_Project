@@ -2,10 +2,6 @@ using UnityEngine;
 using DG.Tweening;
 using UnityEngine.XR.Interaction.Toolkit;
 
-
-using UnityEngine;
-using UnityEngine.XR.Interaction.Toolkit;
-
 [RequireComponent(typeof(Rigidbody), typeof(XRGrabInteractable))]
 public class HoverAndRelease : MonoBehaviour
 {
@@ -14,20 +10,24 @@ public class HoverAndRelease : MonoBehaviour
     public float hoverDuration    = 1f;
     public float rotationDuration = 5f;
 
-    Rigidbody rb;
-    XRGrabInteractable grab;
-    float startY;
+    [Header("Release Settings")]
+    private Rigidbody rb;
+    private XRGrabInteractable grab;
+    private float startY;
+
+    // When true, we apply half‐strength gravity manually in FixedUpdate
+    private bool applyCustomGravity = false;
 
     void Awake()
     {
         rb   = GetComponent<Rigidbody>();
         grab = GetComponent<XRGrabInteractable>();
 
-        // Start in “hover” mode: no gravity
+        // Start in "hover" mode: disable Unity's built‐in gravity
         rb.useGravity  = false;
         rb.isKinematic = false;
 
-        // When the user *releases* the ball, enable gravity
+        // Hook up release callback
         grab.selectExited.AddListener(OnRelease);
     }
 
@@ -35,13 +35,13 @@ public class HoverAndRelease : MonoBehaviour
     {
         startY = transform.position.y;
 
-        // vertical hover tween
-        transform
+        // HOVER: Move the Rigidbody (not the Transform) so physics tracks its velocity
+        rb
             .DOMoveY(startY + hoverAmplitude, hoverDuration)
             .SetLoops(-1, LoopType.Yoyo)
             .SetEase(Ease.InOutSine);
 
-        // slow rotation
+        // ROTATION: purely visual, rotate the Transform
         transform
             .DORotate(new Vector3(0, 360, 0), rotationDuration, RotateMode.FastBeyond360)
             .SetLoops(-1, LoopType.Incremental)
@@ -50,16 +50,29 @@ public class HoverAndRelease : MonoBehaviour
 
     void OnRelease(SelectExitEventArgs args)
     {
-        // stop hovering
-        DOTween.Kill(transform);
-        // let physics take over
+        // 1) Kill any ongoing Rigidbody tween
+        DOTween.Kill(rb);
+
+        // 2) Stop using built‐in gravity and begin applying custom half‐gravity
         rb.useGravity = true;
+        applyCustomGravity = true;
+
+        // 3) Give the ball a strong initial velocity so it flies off quickly
+       
     }
+
+    // void FixedUpdate()
+    // {
+    //     if (applyCustomGravity)
+    //     {
+    //         // Apply half-strength gravity manually (ForceMode.Acceleration ignores mass)
+    //         rb.AddForce(Physics.gravity *0.504f, ForceMode.Acceleration);
+    //     }
+    // }
 
     void OnDisable()
     {
-        // clean up
-        DOTween.Kill(transform);
+        DOTween.Kill(rb);
         grab.selectExited.RemoveListener(OnRelease);
     }
 }
