@@ -1,0 +1,42 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f6429debba84b13a162fafcddb6d0f5, type: 3}
+  m_Name: NewOrthopedicExercise
+  m_EditorClassIdentifier: 
+  exerciseName: New Exercise
+  exerciseCode: EX-000
+  description: 
+  targetBodyParts: 0
+  appropriateStage: 0
+  intensity: 0
+  indications: []
+  contraindications: []
+  precautions: []
+  estimatedDuration: 300
+  recommendedRepetitions: 10
+  recommendedSets: 3
+  minRangeRequired: {x: 0, y: 0, z: 0}
+  maxRangeRequired: {x: 1, y: 1, z: 1}
+  requiresBilateralMovement: 0
+  difficultyScaling: 1
+  painThreshold: 3
+  allowsProgression: 1
+  nextProgressionExercise: {fileID: 0}
+  sceneName: 
+  exerciseEnvironmentPrefab: {fileID: 0}
+  objectives: []
+  requiresRealTimeMonitoring: 1
+  maxHeartRate: 140
+  trackRangeOfMotion: 1
+  trackForceExertion: 0
+  trackBalance: 0
+  trackCoordination: 0

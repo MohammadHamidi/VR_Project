@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d4d4d373f4184aa28c5919b80a3cac6c, type: 3}
+  m_Name: NewPatientProfile
+  m_EditorClassIdentifier: 
+  patientID: 9421c0a4-6237-45b9-91c8-2dd43a64154f
+  firstName: 
+  lastName: 
+  age: 0
+  height: 0
+  weight: 0
+  gender: 0
+  primaryDiagnosis: 
+  secondaryDiagnoses: []
+  surgicalProcedure: 
+  referringPhysician: 
+  treatingTherapist: 
+  currentStage: 0
+  affectedRegions: []
+  overallPainLevel: 0
+  usesAssistiveDevice: 0
+  assistiveDeviceType: 
+  maxAllowedIntensity: 3
+  maxExerciseDuration: 1800
+  requiresSupervision: 1
+  exerciseRestrictions: []
+  shortTermGoals: []
+  longTermGoals: []
+  sessionHistory: []

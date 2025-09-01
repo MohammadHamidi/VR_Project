@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cd0f386c73d743ccb69b3dbf2b07f9f1, type: 3}
+  m_Name: Level2
+  m_EditorClassIdentifier: 
+  xrRigPrefab: {fileID: 2453629302325982545, guid: a82e3a6cd236c40e2989fbfef31f5299, type: 3}
+  uiControllerPrefab: {fileID: 471150785547529671, guid: b3cff934822ce4d869d852f85de02c28, type: 3}
+  environmentPrefabs:
+  - {fileID: 1005246215909731498, guid: 95d56d0fed107445b87a3685b245df94, type: 3}
+  defaultEnvironmentIndex: 0
+  autoGenerateEnvironment: 0
+  ballPrefab: {fileID: 8774105223417190858, guid: 66db2c39e6e874b0eae9318cfd6d37dd, type: 3}
+  ballSpawnPosition: {x: 0, y: 1.5, z: 0}
+  respawnDelay: 0.8
+  respawnZonePrefab: {fileID: 111596060587745638, guid: 01c12db87ce9d413dba8193dea9b3740, type: 3}
+  respawnZonePosition: {x: 0, y: -5, z: 0}
+  ringPrefab: {fileID: 9164512224790044594, guid: b34b66dc0179241f0b2f9146ea16868c, type: 3}
+  ringPositions:
+  - {x: -3, y: 2.5, z: 7}
+  - {x: -1, y: 3.5, z: 9}
+  - {x: 1, y: 3.5, z: 9}
+  - {x: 3, y: 2.5, z: 7}
+  - {x: 0, y: 4.5, z: 11}
+  - {x: -2, y: 4, z: 13}
+  - {x: 2, y: 4, z: 13}
+  stageTime: 40
+  enableTimer: 1

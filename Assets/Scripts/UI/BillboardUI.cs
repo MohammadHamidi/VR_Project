@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
+using Unity.XR.CoreUtils;    // for XROrigin
 using DG.Tweening;
 
 [RequireComponent(typeof(Canvas), typeof(XRGrabInteractable))]
@@ -17,27 +18,47 @@ public class BillboardUI : MonoBehaviour
     public float distanceFromCamera = 2f;
 
     [Header("Tilt Settings")]
-    public bool  enableTilt   = true;
+    public bool  enableTilt       = true;
     [Tooltip("Degrees to tilt downward on X-axis")]
-    public float tiltAngleX   = 15f;
+    public float tiltAngleX       = 15f;
     [Tooltip("Tween time to reapply orientation on release")]
     public float reorientDuration = 0.5f;
 
-    [SerializeField] Camera _mainCam;
-    XRGrabInteractable _grab;
-    bool _isGrabbed;
+    [SerializeField, Tooltip("If left blank, will use the XR camera at runtime")]
+    private Camera _mainCam;
+    private XRGrabInteractable _grab;
+    private bool _isGrabbed;
 
     void Awake()
     {
-        
-        _grab    = GetComponent<XRGrabInteractable>();
+        // If no camera is assigned in Inspector, try to grab it from the XR Origin
+        if (_mainCam == null)
+        {
+            var xrOrigin = FindObjectOfType<XROrigin>();
+            if (xrOrigin != null && xrOrigin.Camera != null)
+            {
+                _mainCam = xrOrigin.Camera;
+            }
+            else
+            {
+                // Fallback to Camera.main if no XROrigin or XR camera found
+                _mainCam = Camera.main;
+                if (_mainCam == null)
+                    Debug.LogWarning("BillboardUI: No camera found (XR or Main). Assign one manually if needed.");
+            }
+        }
+
+        _grab = GetComponent<XRGrabInteractable>();
         _grab.selectEntered.AddListener(_ => OnGrab());
         _grab.selectExited .AddListener(_ => OnRelease());
     }
 
     void Start()
     {
-        // Determine horizontal anchor based on enum if not customizing:
+        if (_mainCam == null)
+            return; // nothing to do if we couldn't find a camera
+
+        // Determine horizontal anchor based on enum
         float h = horizontalViewport;
         switch (anchor)
         {
@@ -50,7 +71,7 @@ public class BillboardUI : MonoBehaviour
         Vector3 vp = new Vector3(h, verticalViewport, distanceFromCamera);
         transform.position = _mainCam.ViewportToWorldPoint(vp);
 
-        // Initial rotation: camera Y + optional tilt
+        // Initial rotation: camera’s Y rotation + optional tilt
         float camY = _mainCam.transform.eulerAngles.y;
         float tilt = enableTilt ? tiltAngleX : 0f;
         transform.rotation = Quaternion.Euler(tilt, camY, 0);
@@ -58,11 +79,14 @@ public class BillboardUI : MonoBehaviour
 
     void LateUpdate()
     {
-        if (_isGrabbed) return;
+        if (_isGrabbed || _mainCam == null)
+            return;
 
+        // Keep the panel facing the camera horizontally
         Vector3 dir = (_mainCam.transform.position - transform.position).normalized;
-        dir.y = 0;
-        if (dir.sqrMagnitude < 0.001f) return;
+        dir.y = 0; // ignore vertical component
+        if (dir.sqrMagnitude < 0.001f)
+            return;
 
         Quaternion target = Quaternion.LookRotation(dir);
         if (enableTilt)
@@ -74,16 +98,19 @@ public class BillboardUI : MonoBehaviour
     void OnGrab()
     {
         _isGrabbed = true;
-        DOTween.Kill(transform);
+        DOTween.Kill(transform); // stop any existing tweens
     }
 
     void OnRelease()
     {
         _isGrabbed = false;
+        if (_mainCam == null)
+            return;
 
         Vector3 dir = (_mainCam.transform.position - transform.position).normalized;
         dir.y = 0;
-        if (dir.sqrMagnitude < 0.001f) return;
+        if (dir.sqrMagnitude < 0.001f)
+            return;
 
         Quaternion target = Quaternion.LookRotation(dir);
         if (enableTilt)
