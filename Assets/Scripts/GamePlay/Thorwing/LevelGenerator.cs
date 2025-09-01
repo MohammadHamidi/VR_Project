@@ -9,6 +9,14 @@ public class LevelGenerator : MonoBehaviour
     [Tooltip("Drag in the ThrowingLevelData asset here")]
     public List<ThrowingLevelData> levelDatas;
 
+    [Header("Level Progression")]
+    [Tooltip("Enable level progression through multiple levels")]
+    public bool enableLevelProgression = true;
+    [Tooltip("Current level index (0-based)")]
+    public int currentLevelIndex = 0;
+    [Tooltip("Automatically advance to next level when current level is completed")]
+    public bool autoAdvanceLevels = true;
+
     [Header("Scene References")]
     [Tooltip("Optional parent for all instantiated rings")]
     public Transform ringsParent;
@@ -24,11 +32,15 @@ public class LevelGenerator : MonoBehaviour
 
     void Start()
     {
-        if (levelData == null)
+        // Determine which level data to use
+        ThrowingLevelData selectedLevelData = GetCurrentLevelData();
+        if (selectedLevelData == null)
         {
-            Debug.LogError("LevelGenerator: No LevelData assigned!");
+            Debug.LogError("LevelGenerator: No LevelData available!");
             return;
         }
+
+        levelData = selectedLevelData;
 
         // 0) Instantiate all environment prefabs first:
         GenerateEnvironments();
@@ -193,5 +205,135 @@ public class LevelGenerator : MonoBehaviour
                 "Make sure your uiControllerPrefab has a StageUIController component on itself or a child."
             );
         }
+    }
+
+    /// <summary>
+    /// Gets the current level data based on the current level index
+    /// </summary>
+    private ThrowingLevelData GetCurrentLevelData()
+    {
+        if (!enableLevelProgression)
+        {
+            return levelData;
+        }
+
+        if (levelDatas != null && levelDatas.Count > 0)
+        {
+            int clampedIndex = Mathf.Clamp(currentLevelIndex, 0, levelDatas.Count - 1);
+            return levelDatas[clampedIndex];
+        }
+
+        return levelData; // Fallback to single level data
+    }
+
+    /// <summary>
+    /// Advances to the next level
+    /// </summary>
+    public void AdvanceToNextLevel()
+    {
+        if (!enableLevelProgression || levelDatas == null || levelDatas.Count <= 1)
+        {
+            Debug.LogWarning("Level progression is not enabled or no additional levels available.");
+            return;
+        }
+
+        currentLevelIndex = (currentLevelIndex + 1) % levelDatas.Count;
+        Debug.Log($"Advancing to level {currentLevelIndex + 1}");
+
+        // Reload the scene or regenerate level
+        RegenerateLevel();
+    }
+
+    /// <summary>
+    /// Sets the current level by index
+    /// </summary>
+    public void SetLevel(int levelIndex)
+    {
+        if (!enableLevelProgression || levelDatas == null)
+        {
+            Debug.LogWarning("Level progression is not enabled.");
+            return;
+        }
+
+        currentLevelIndex = Mathf.Clamp(levelIndex, 0, levelDatas.Count - 1);
+        Debug.Log($"Setting level to {currentLevelIndex + 1}");
+
+        RegenerateLevel();
+    }
+
+    /// <summary>
+    /// Regenerates the current level
+    /// </summary>
+    public void RegenerateLevel()
+    {
+        // Clear existing level elements
+        ClearLevel();
+
+        // Regenerate with new level data
+        ThrowingLevelData selectedLevelData = GetCurrentLevelData();
+        if (selectedLevelData != null)
+        {
+            levelData = selectedLevelData;
+            GenerateEnvironments();
+            GenerateBallSpawner();
+            GenerateRespawnZone();
+            List<TargetRing> rings = GenerateRings();
+            GenerateStageManager(rings);
+        }
+    }
+
+    /// <summary>
+    /// Clears all level elements
+    /// </summary>
+    private void ClearLevel()
+    {
+        // Clear environments
+        foreach (var env in _instantiatedEnvironments)
+        {
+            if (env != null)
+            {
+                Destroy(env);
+            }
+        }
+        _instantiatedEnvironments.Clear();
+
+        // Clear other level elements if they exist
+        var ringsParentObj = GameObject.Find("Rings");
+        if (ringsParentObj != null)
+        {
+            Destroy(ringsParentObj);
+        }
+
+        var ballSpawnerObj = GameObject.Find("BallSpawner");
+        if (ballSpawnerObj != null)
+        {
+            Destroy(ballSpawnerObj);
+        }
+
+        var stageManagerObj = GameObject.Find("StageManager");
+        if (stageManagerObj != null)
+        {
+            Destroy(stageManagerObj);
+        }
+    }
+
+    /// <summary>
+    /// Gets the total number of available levels
+    /// </summary>
+    public int GetTotalLevels()
+    {
+        if (levelDatas != null && enableLevelProgression)
+        {
+            return levelDatas.Count;
+        }
+        return 1;
+    }
+
+    /// <summary>
+    /// Gets the current level number (1-based)
+    /// </summary>
+    public int GetCurrentLevelNumber()
+    {
+        return currentLevelIndex + 1;
     }
 }

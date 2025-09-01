@@ -401,6 +401,43 @@ public class SOLIDBridgeBuilder : MonoBehaviour
         if (Application.isPlaying) BuildBridge();
     }
 
+    /// <summary>
+    /// Sets the anchor type and rebuilds the bridge
+    /// </summary>
+    public void SetAnchorType(AnchorFactory.AnchorType newAnchorType)
+    {
+        anchorType = newAnchorType;
+        anchorFactory = new AnchorFactory(anchorType);
+        bridgeBuilt = false;
+        if (Application.isPlaying) BuildBridge();
+    }
+
+    /// <summary>
+    /// Gets the current bridge configuration
+    /// </summary>
+    public BridgeConfiguration GetBridgeConfiguration()
+    {
+        return config;
+    }
+
+    /// <summary>
+    /// Sets the bridge configuration
+    /// </summary>
+    public void SetBridgeConfiguration(BridgeConfiguration newConfig)
+    {
+        config = newConfig;
+        bridgeBuilt = false;
+        if (Application.isPlaying) BuildBridge();
+    }
+
+    /// <summary>
+    /// Gets the current anchor type
+    /// </summary>
+    public AnchorFactory.AnchorType GetAnchorType()
+    {
+        return anchorType;
+    }
+
     public IBridgeComponent[] GetPlanks() => currentBridge.Planks ?? new IBridgeComponent[0];
     public IBridgeComponent GetStartPlatform() => currentBridge.Platforms?.Length > 0 ? currentBridge.Platforms[0] : null;
     public IBridgeComponent GetEndPlatform() => currentBridge.Platforms?.Length > 1 ? currentBridge.Platforms[1] : null;
