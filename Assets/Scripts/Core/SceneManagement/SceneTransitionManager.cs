@@ -27,7 +27,6 @@ namespace VRRehab.SceneManagement
             BridgeBuilding,
             SquatDodge,
             Menu,
-            Tutorial,
             ProfileManagement
         }
 
@@ -406,6 +405,12 @@ namespace VRRehab.SceneManagement
             {
                 LoadScene(lastScene);
             }
+        }
+
+        public void RestartCurrentScene()
+        {
+            string currentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            LoadScene(currentScene);
         }
 
         public void SetLoadingMessage(string message)

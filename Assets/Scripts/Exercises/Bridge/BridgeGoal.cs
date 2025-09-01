@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Events;
+using VRRehab.SceneManagement;
 
 public class BridgeGoal : MonoBehaviour
 {
