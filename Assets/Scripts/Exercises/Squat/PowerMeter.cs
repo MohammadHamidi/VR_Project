@@ -29,7 +29,7 @@ namespace CombatSystem.Combat
         [SerializeField] private UnityEngine.UI.Slider powerSlider;
         [SerializeField] private UnityEngine.UI.Image powerFillImage;
         [SerializeField] private Color normalColor = Color.blue;
-        [SerializeField] private Color overchargeColor = Color.gold;
+        [SerializeField] private Color overchargeColor = new Color(1f, 0.84f, 0f); // Gold color
 
         // Properties
         public float CurrentPower { get; private set; }

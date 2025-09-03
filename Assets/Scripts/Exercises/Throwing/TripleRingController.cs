@@ -19,7 +19,7 @@ namespace ThrowingExercise
         [Header("Visual Settings")]
         public Color normalColor = Color.white;
         public Color activeColor = Color.green;
-        public Color successColor = Color.gold;
+        public Color successColor = new Color(1f, 0.84f, 0f); // Gold color
     }
 
     [System.Serializable]

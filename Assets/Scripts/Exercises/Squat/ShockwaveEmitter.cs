@@ -18,7 +18,7 @@ namespace CombatSystem.Combat
         [SerializeField] private GameObject shockwaveRingPrefab;
         [SerializeField] private ParticleSystem shockwaveParticles;
         [SerializeField] private Color shockwaveColor = Color.cyan;
-        [SerializeField] private AnimationCurve expansionCurve = AnimationCurve.EaseOutQuad(0, 0, 1, 1);
+        [SerializeField] private AnimationCurve expansionCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
 
         [Header("Audio")]
         [SerializeField] private AudioClip shockwaveSound;

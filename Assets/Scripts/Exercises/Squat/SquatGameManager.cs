@@ -366,6 +366,14 @@ namespace CombatSystem
             }
         }
 
+        private void UpdateStatusText(string customMessage)
+        {
+            if (statusText != null)
+            {
+                statusText.text = customMessage;
+            }
+        }
+
         private void UpdateInstructionText(string message)
         {
             if (instructionText != null)
