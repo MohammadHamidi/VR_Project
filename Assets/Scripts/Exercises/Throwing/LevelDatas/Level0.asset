@@ -17,6 +17,17 @@ MonoBehaviour:
   environmentPrefabs:
   - {fileID: 1005246215909731498, guid: 95d56d0fed107445b87a3685b245df94, type: 3}
   defaultEnvironmentIndex: 0
+  autoGenerateEnvironment: 0
+  generationSeed: 123
+  generationExclusionRadius: 5
+  generationAreaOffsetXZ: 10
+  generationDensity: 0.7
+  primitiveChunkSize: {x: 3, y: 3, z: 3}
+  sizeVariation: 0.5
+  chunkHeightRange: {x: 0, y: 5}
+  generatedPrimitiveTypes:
+  - type: 0
+    prefab: {fileID: 0}
   ballPrefab: {fileID: 8774105223417190858, guid: 66db2c39e6e874b0eae9318cfd6d37dd, type: 3}
   ballSpawnPosition: {x: 0, y: 0, z: 0}
   respawnDelay: 1

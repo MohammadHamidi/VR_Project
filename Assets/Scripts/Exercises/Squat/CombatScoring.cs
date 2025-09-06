@@ -180,8 +180,8 @@ namespace CombatSystem.Combat
             sessionDronesDestroyed++;
             
             // Score based on drone type
-            int points = drone.Type == DroneType.Heavy ? droneDestroyPoints * 2 : droneDestroyPoints;
-            string message = $"{drone.Type} Destroyed!";
+            int points = drone.type == DroneType.Heavy ? droneDestroyPoints * 2 : droneDestroyPoints;
+            string message = $"{drone.type} Destroyed!";
             
             AddScore(points, message);
             ExtendCombo();

@@ -1,439 +1,438 @@
+// CombatSystem/Drones/DroneController.cs
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
-using CombatSystem.Events;
 using DG.Tweening;
+using CombatSystem.Events;
 
 namespace CombatSystem.Drones
 {
-    public enum DroneType
+    public enum DroneType { Scout, Heavy }
+    public enum DroneState { Idle, Wandering, Aggressive, Telegraphing, Dashing, Recovering, Stunned, Destroyed }
+
+    public interface IPoolable
     {
-        Scout,  // پهپادِ شناس - quick single beam
-        Heavy   // پهپادِ سنگین - slow thick beam with splash
+        void SetPool(System.Action<IPoolable> returnToPool);
+        void OnSpawned();
+        void OnDespawned();
     }
 
-    public class DroneController : MonoBehaviour
+    /// <summary>
+    /// رفتار پهپاد + ورودی پورتال با حرکت نرم.
+    /// </summary>
+    public class DroneController : MonoBehaviour, IPoolable
     {
-        [Header("Drone Settings")]
-        [SerializeField] private DroneType droneType = DroneType.Scout;
-        [SerializeField] private float health = 1f;
-        [SerializeField] private float movementSpeed = 2f;
-        [SerializeField] private float hoverAmplitude = 0.5f;
-        [SerializeField] private float hoverFrequency = 1f;
+        [Header("Identity")]
+        public DroneType type = DroneType.Scout;
+        [SerializeField] private bool wanderAroundHome = true;          // نزدیک محل اسپاون بچرخه تا وقتی آگرو بگیرد
+        [SerializeField] private bool despawnAfterFirstAttack = true;    // بعد از اولین دَش برگرده به پول
+        private Vector3 homePosition;                                    // محل اسپاون
+        public void SetHome(Vector3 pos) => homePosition = pos;
 
-        [Header("Attack Settings")]
-        [SerializeField] private float telegraphTime = 0.6f;
-        [SerializeField] private float attackCooldown = 1.0f;
-        [SerializeField] private float beamThickness = 0.1f;
-        [SerializeField] private float attackRange = 15f;
-        [SerializeField] private LayerMask playerLayer = 1;
+        [Header("References")]
+        [SerializeField] private Transform droneModel;    // بدنه بصری
+        [SerializeField] private AudioSource audioSource; // در Awake ساخته می‌شود اگر نبود
+        [SerializeField] public Transform player;        // هدف
 
-        [Header("Visual Components")]
-        [SerializeField] private LineRenderer laserLine;
-        [SerializeField] private ParticleSystem telegraphVFX;
-        [SerializeField] private ParticleSystem destroyVFX;
-        [SerializeField] private GameObject droneModel;
-        [SerializeField] private Light spotLight;
+        [Header("Hover")]
+        [SerializeField] private float baseHoverHeight = 1.4f;
+        [SerializeField] private float hoverAmplitude = 0.15f;
+        [SerializeField] private float hoverSpeed = 1.2f;
 
-        [Header("Audio")]
-        [SerializeField] private AudioClip telegraphSound;
-        [SerializeField] private AudioClip laserFireSound;
-        [SerializeField] private AudioClip destroySound;
+        [Header("Wander (Range & Bias)")]
+        [SerializeField] private float wanderRadius = 3.0f;
+        [SerializeField] private float wanderForwardBias = 2.2f;
 
-        [Header("Materials")]
-        [SerializeField] private Material telegraphMaterial;
-        [SerializeField] private Material laserMaterial;
+        [Header("Wander (Speed & Smoothness)")]
+        [SerializeField] private float wanderMoveSpeed = 2.0f;          // حداکثر سرعت حرکت
+        [SerializeField] private float wanderSmoothTime = 0.55f;        // زمان هموارسازی برای SmoothDamp
+        [SerializeField] private float wanderTargetResponsiveness = 2.5f;// نرخ هموارسازی هدف (بزرگتر = تندتر)
+        [SerializeField] private float wanderNoiseSpeed = 0.15f;        // سرعت تغییر نویز
+        [SerializeField] private float wanderNoiseScale = 1.0f;         // شدت جابجایی نویزی داخل شعاع
+        [SerializeField] private float minWanderDistance = 0.5f;        // فقط برای سازگاری با مقادیر قبلی
 
-        // Private components
-        private AudioSource audioSource;
-        private Rigidbody rb;
-        private Vector3 startPosition;
-        private float lastAttackTime;
-        private bool isAttacking;
-        private bool isDestroyed;
-        private bool isStunned;
-        private float stunEndTime;
+        [Header("Aggro / Attack")]
+        [SerializeField] private float detectionRange = 5.0f;
+        [SerializeField] private float aggroBuildPerSecond = 0.6f;
+        [SerializeField] private float aggroDecayPerSecond = 0.8f;
+        [SerializeField] private float telegraphDuration = 0.45f;
+        [SerializeField] private float minWanderTime = 2.0f; // زمان حداقل قبل از تهاجمی شدن
+        [SerializeField] private float dashSpeed = 7.5f;
+        [SerializeField] private float dashTime = 0.34f;
+        [SerializeField] private float recoverTime = 0.45f;
 
-        // Properties
-        public bool IsDestroyed => isDestroyed;
-        public bool IsStunned => isStunned && Time.time < stunEndTime;
-        public DroneType Type => droneType;
+        [Header("HP")]
+        [SerializeField] private float maxHP = 10f;
 
-        void Awake()
+        // ======= Internal state =======
+        public DroneState state { get; private set; } = DroneState.Idle;
+        public bool IsDestroyed => state == DroneState.Destroyed;
+
+        private float hp;
+        private float aggroValue;
+        private Vector3 wanderTarget;
+        private float spawnTime; // Track when drone was spawned to enforce minimum wander time
+
+        // Smooth wandering state
+        private Vector3 wanderVelocity;         // for SmoothDamp
+        private float noiseSeedX, noiseSeedZ;   // coherent Perlin seeds
+
+        // ======= Tweens =======
+        private Tween hoverTween;
+        private Tween moveTween; // kept for compatibility with non-wander moves
+        private bool hoverEnabled = true;
+        private bool inPortalEntry = false;
+
+        // ======= Pooling =======
+        private System.Action<IPoolable> _returnToPool;
+
+        // ======= Difficulty multipliers (set via reflection by spawner) =======
+        private float _wanderSpeed_Internal = 1f;
+        private float _dashSpeed_Internal = 1f;
+        private float _attackCooldown_Internal = 1f;
+        private float _telegraphDuration_Internal = 1f;
+
+        private void Awake()
         {
-            InitializeComponents();
-            ConfigureDroneType();
+            if (audioSource == null)
+            {
+                audioSource = gameObject.GetComponent<AudioSource>();
+                if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
+                audioSource.playOnAwake = false;
+                audioSource.spatialBlend = 1f;
+            }
         }
 
-        void Start()
+        private void OnEnable()
         {
-            startPosition = transform.position;
+            inPortalEntry = false;
+            hoverEnabled = true;
+            KillAllTweens();
             StartHoverAnimation();
         }
 
-        void Update()
+        private void OnDisable()
         {
-            if (isDestroyed) return;
-
-            UpdateHover();
-            UpdateAttackLogic();
-            UpdateStunState();
+            KillAllTweens();
         }
 
-        private void InitializeComponents()
+        public void SetPool(System.Action<IPoolable> returnToPool) => _returnToPool = returnToPool;
+
+        public void OnSpawned()
         {
-            rb = GetComponent<Rigidbody>();
-            if (rb == null) rb = gameObject.AddComponent<Rigidbody>();
-            
-            rb.useGravity = false;
-            rb.isKinematic = true;
+            hp = maxHP;
+            state = DroneState.Wandering; // شروع مستقیم با حالت پرسه‌زنی نرم
+            aggroValue = 0f;
+            inPortalEntry = false;
+            hoverEnabled = true;
+            spawnTime = Time.time;
 
-            audioSource = GetComponent<AudioSource>();
-            if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
-            
-            audioSource.spatialBlend = 1f; // 3D audio
-            audioSource.playOnAwake = false;
+            homePosition = transform.position; // 🟢 محل اسپاون را ذخیره کن
 
-            // Setup laser line if not assigned
-            if (laserLine == null)
+            if (droneModel != null)
             {
-                GameObject laserObj = new GameObject("LaserLine");
-                laserObj.transform.SetParent(transform);
-                laserLine = laserObj.AddComponent<LineRenderer>();
-                SetupLaserLine();
+                droneModel.gameObject.SetActive(true);
+                droneModel.localScale = Vector3.one;
             }
 
-            // Setup spotlight if not assigned
-            if (spotLight == null)
-            {
-                GameObject lightObj = new GameObject("SpotLight");
-                lightObj.transform.SetParent(transform);
-                spotLight = lightObj.AddComponent<Light>();
-                SetupSpotLight();
-            }
+            // initialize smooth wander
+            wanderTarget = transform.position;
+            wanderVelocity = Vector3.zero;
+            noiseSeedX = Random.Range(0f, 1000f);
+            noiseSeedZ = Random.Range(0f, 1000f);
         }
 
-        private void ConfigureDroneType()
+        public void OnDespawned()
         {
-            switch (droneType)
+            KillAllTweens();
+            if (droneModel != null) droneModel.gameObject.SetActive(false);
+            state = DroneState.Destroyed;
+        }
+
+        private void Update()
+        {
+            if (IsDestroyed || inPortalEntry) return;
+
+            switch (state)
             {
-                case DroneType.Scout:
-                    health = 1f;
-                    telegraphTime = 0.6f;
-                    attackCooldown = 1.0f;
-                    beamThickness = 0.05f;
-                    movementSpeed = 3f;
+                case DroneState.Idle:
+                case DroneState.Wandering:
+                    TickWanderSmooth();
+                    TickAggro();
                     break;
-                    
-                case DroneType.Heavy:
-                    health = 2f; // Requires 2 shockwaves to destroy
-                    telegraphTime = 1.2f;
-                    attackCooldown = 2.0f;
-                    beamThickness = 0.15f;
-                    movementSpeed = 1.5f;
+
+                case DroneState.Aggressive:
+                    TryStartAttack();
                     break;
+
+                // other states are timer/coroutine-driven
             }
         }
 
-        private void SetupLaserLine()
-        {
-            laserLine.material = laserMaterial != null ? laserMaterial : CreateDefaultLaserMaterial();
-            laserLine.startWidth = beamThickness;
-            laserLine.endWidth = beamThickness;
-            laserLine.positionCount = 2;
-            laserLine.enabled = false;
-            laserLine.useWorldSpace = true;
-        }
-
-        private void SetupSpotLight()
-        {
-            spotLight.type = LightType.Spot;
-            spotLight.color = Color.red;
-            spotLight.intensity = 2f;
-            spotLight.range = attackRange;
-            spotLight.spotAngle = 15f;
-            spotLight.enabled = false;
-        }
-
-        private Material CreateDefaultLaserMaterial()
-        {
-            Material mat = new Material(Shader.Find("Sprites/Default"));
-            mat.color = Color.red;
-            return mat;
-        }
-
+        // ================== Hover ==================
         private void StartHoverAnimation()
         {
-            // DOTween hover animation
-            transform.DOMoveY(startPosition.y + hoverAmplitude, 1f / hoverFrequency)
-                .SetEase(Ease.InOutSine)
-                .SetLoops(-1, LoopType.Yoyo);
+            KillHover();
+
+            // set initial Y
+            var p = transform.position;
+            p.y = baseHoverHeight;
+            transform.position = p;
+
+            // Use a DOVirtual.Float driver (returns Tweener/Tween) — safe to SetLoops
+            hoverTween = DOVirtual.Float(0f, 1f, 1f, _ =>
+            {
+                if (!hoverEnabled) return;
+                float t = Time.time * hoverSpeed;
+                float y = baseHoverHeight + Mathf.Sin(t) * hoverAmplitude;
+                var pos = transform.position;
+                pos.y = y;
+                transform.position = pos;
+            })
+            .SetLoops(-1)
+            .SetUpdate(UpdateType.Normal, true);
         }
 
-        private void UpdateHover()
+        private void KillHover()
         {
-            // Additional random movement for more dynamic feel
-            Vector3 randomOffset = new Vector3(
-                Mathf.Sin(Time.time * hoverFrequency * 0.7f) * 0.2f,
-                0,
-                Mathf.Cos(Time.time * hoverFrequency * 0.5f) * 0.2f
+            if (hoverTween != null && hoverTween.IsActive()) hoverTween.Kill();
+            hoverTween = null;
+        }
+
+        // ================== Wander (SMOOTH / PERLIN) ==================
+        /// <summary>
+        /// Smooth, subtle wandering using coherent Perlin noise + SmoothDamp (no tweens).
+        /// Always keeps Y from hover, only steers on XZ.
+        /// </summary>
+        private void TickWanderSmooth()
+        {
+            // choose the anchor
+            Vector3 anchor = wanderAroundHome
+                ? homePosition
+                : (player != null ? player.position : transform.position);
+
+            // forward bias (flattened)
+            Vector3 fwd = (player != null ? player.forward : transform.forward);
+            fwd.y = 0f; fwd = fwd.sqrMagnitude > 0.0001f ? fwd.normalized : Vector3.forward;
+
+            // coherent offset from Perlin noise (smooth over time)
+            float t = Time.time * wanderNoiseSpeed;
+            float nx = Mathf.PerlinNoise(noiseSeedX, t) * 2f - 1f;
+            float nz = Mathf.PerlinNoise(noiseSeedZ, t) * 2f - 1f;
+
+            Vector3 noiseOffset = new Vector3(nx, 0f, nz) * (wanderRadius * wanderNoiseScale);
+            Vector3 desired = anchor + noiseOffset + fwd * wanderForwardBias;
+            desired.y = baseHoverHeight;
+
+            // low-pass filter the target itself (prevents "snapping" to new noise samples)
+            float targetAlpha = 1f - Mathf.Exp(-wanderTargetResponsiveness * Time.deltaTime);
+            wanderTarget = Vector3.Lerp(wanderTarget, desired, targetAlpha);
+
+            // move smoothly toward the (filtered) target on XZ only
+            Vector3 pos = transform.position;
+            Vector3 targetXZ = new Vector3(wanderTarget.x, pos.y, wanderTarget.z);
+            float maxSpeed = Mathf.Max(0.01f, wanderMoveSpeed * _wanderSpeed_Internal);
+
+            transform.position = Vector3.SmoothDamp(
+                pos, targetXZ, ref wanderVelocity, wanderSmoothTime, maxSpeed, Time.deltaTime
             );
-            
-            Vector3 targetPos = startPosition + randomOffset;
-            transform.position = Vector3.Lerp(transform.position, targetPos, Time.deltaTime * movementSpeed * 0.5f);
+
+            // gentle facing toward travel direction/target
+            FaceTowards(targetXZ);
         }
 
-        private void UpdateAttackLogic()
+        // ================== (Legacy) Tweened Move API kept for compatibility ==================
+        private void MoveTo(Vector3 target, float speed)
         {
-            if (isAttacking || IsStunned) return;
-            
-            if (Time.time - lastAttackTime >= attackCooldown)
+            // Kept for non-wander motions if needed; wandering no longer calls this.
+            KillMove();
+            hoverEnabled = false;
+
+            float dist = Vector3.Distance(transform.position, target);
+            float dur = dist / Mathf.Max(0.001f, speed);
+
+            moveTween = transform.DOMove(target, dur)
+                .SetEase(Ease.OutSine)
+                .OnComplete(() => { hoverEnabled = true; });
+        }
+
+        private void KillMove()
+        {
+            if (moveTween != null && moveTween.IsActive()) moveTween.Kill();
+            moveTween = null;
+        }
+
+        private void FaceTowards(Vector3 target)
+        {
+            Vector3 dir = (target - transform.position);
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f) return;
+
+            Quaternion desired = Quaternion.LookRotation(dir.normalized, Vector3.up);
+            transform.rotation = Quaternion.Slerp(
+                transform.rotation,
+                desired,
+                1f - Mathf.Exp(-8f * Time.deltaTime)
+            );
+        }
+
+        // ================== Aggro / Attack ==================
+        private void TickAggro()
+        {
+            if (player == null) return;
+
+            // Enforce minimum wander time before becoming aggressive
+            float timeSinceSpawn = Time.time - spawnTime;
+            if (timeSinceSpawn < minWanderTime) return;
+
+            float dist = Vector3.Distance(transform.position, player.position);
+            float delta = (dist <= detectionRange)
+                ? (aggroBuildPerSecond * Time.deltaTime)
+                : (-aggroDecayPerSecond * Time.deltaTime);
+
+            aggroValue = Mathf.Clamp01(aggroValue + delta);
+
+            if (aggroValue >= 1f && state == DroneState.Wandering)
             {
-                // Find player and attack
-                var player = FindPlayerTarget();
-                if (player != null)
-                {
-                    StartCoroutine(AttackSequence(player));
-                }
+                state = DroneState.Aggressive;
+                Debug.Log($"{gameObject.name} became aggressive after {timeSinceSpawn:F1}s wander time");
+            }
+            else if (aggroValue <= 0f && state == DroneState.Aggressive)
+            {
+                state = DroneState.Wandering;
             }
         }
 
-        private void UpdateStunState()
+        private void TryStartAttack()
         {
-            if (isStunned && Time.time >= stunEndTime)
+            if (player == null || state != DroneState.Aggressive) return;
+            StopAllCoroutines();
+            StartCoroutine(AttackDashSequence());
+        }
+
+        private IEnumerator AttackDashSequence()
+        {
+            state = DroneState.Telegraphing;
+
+            float tele = telegraphDuration * _telegraphDuration_Internal;
+            float t = 0f;
+            while (t < tele)
             {
-                isStunned = false;
-                // Resume normal behavior
-                if (droneModel != null)
-                {
-                    droneModel.transform.DOKill();
-                    droneModel.transform.rotation = Quaternion.identity;
-                }
-            }
-        }
-
-        private Transform FindPlayerTarget()
-        {
-            // Look for XR Camera or main camera
-            var xrOrigin = FindObjectOfType<Unity.XR.CoreUtils.XROrigin>();
-            if (xrOrigin != null)
-                return xrOrigin.Camera.transform;
-                
-            return Camera.main?.transform;
-        }
-
-        private IEnumerator AttackSequence(Transform target)
-        {
-            isAttacking = true;
-            lastAttackTime = Time.time;
-
-            // Phase 1: Telegraph
-            yield return StartCoroutine(TelegraphPhase(target));
-
-            // Phase 2: Fire laser
-            yield return StartCoroutine(FireLaserPhase(target));
-
-            // Phase 3: Cooldown
-            yield return new WaitForSeconds(0.2f);
-
-            isAttacking = false;
-        }
-
-        private IEnumerator TelegraphPhase(Transform target)
-        {
-            // Play telegraph sound
-            if (audioSource && telegraphSound)
-                audioSource.PlayOneShot(telegraphSound);
-
-            // Enable telegraph VFX
-            if (telegraphVFX) telegraphVFX.Play();
-
-            // Show telegraph line (red, growing intensity)
-            laserLine.enabled = true;
-            laserLine.material = telegraphMaterial != null ? telegraphMaterial : CreateTelegraphMaterial();
-            
-            spotLight.enabled = true;
-            spotLight.color = Color.red;
-
-            float elapsedTime = 0f;
-            while (elapsedTime < telegraphTime)
-            {
-                // Update line position
-                Vector3 startPos = transform.position;
-                Vector3 direction = (target.position - startPos).normalized;
-                Vector3 endPos = startPos + direction * attackRange;
-
-                laserLine.SetPosition(0, startPos);
-                laserLine.SetPosition(1, endPos);
-
-                // Point spotlight at target
-                spotLight.transform.LookAt(target.position);
-
-                // Animate intensity
-                float intensity = Mathf.Lerp(0.1f, 1f, elapsedTime / telegraphTime);
-                Color color = Color.red * intensity;
-                color.a = intensity;
-                laserLine.material.color = color;
-                spotLight.intensity = intensity * 3f;
-
-                elapsedTime += Time.deltaTime;
+                t += Time.deltaTime;
+                FaceTowards(player != null ? player.position : transform.position + transform.forward);
                 yield return null;
             }
-        }
 
-        private IEnumerator FireLaserPhase(Transform target)
-        {
-            // Play laser fire sound
-            if (audioSource && laserFireSound)
-                audioSource.PlayOneShot(laserFireSound);
+            state = DroneState.Dashing;
+            hoverEnabled = false;
+            KillMove();
 
-            // Change to laser material
-            laserLine.material = laserMaterial != null ? laserMaterial : CreateDefaultLaserMaterial();
-            laserLine.material.color = Color.red;
-
-            spotLight.color = Color.white;
-            spotLight.intensity = 5f;
-
-            // Perform raycast for hit detection
             Vector3 startPos = transform.position;
-            Vector3 direction = (target.position - startPos).normalized;
-            
-            if (Physics.Raycast(startPos, direction, out RaycastHit hit, attackRange, playerLayer))
-            {
-                // Check if player is squatting (dodging)
-                bool playerDodging = false;
-                var squatDodge = FindObjectOfType<CombatSystem.Player.SquatDodge>();
-                if (squatDodge != null)
-                {
-                    playerDodging = squatDodge.IsDodging;
-                }
+            Vector3 dir = (player != null ? (player.position - transform.position) : transform.forward);
+            dir.y = 0f; dir.Normalize();
 
-                if (!playerDodging)
-                {
-                    // Player hit - trigger damage
-                    HitPlayer(hit.point);
-                }
-                else
-                {
-                    // Player successfully dodged
-                    CombatEvents.OnPlayerDodge?.Invoke();
-                }
-
-                // Show laser hitting the point
-                laserLine.SetPosition(1, hit.point);
-            }
-            else
+            Vector3 dashTarget = startPos + dir * (dashSpeed * _dashSpeed_Internal * dashTime);
+            float elapsed = 0f;
+            while (elapsed < dashTime)
             {
-                // Laser missed
-                Vector3 endPos = startPos + direction * attackRange;
-                laserLine.SetPosition(1, endPos);
+                elapsed += Time.deltaTime;
+                float a = Mathf.Clamp01(elapsed / dashTime);
+                transform.position = Vector3.Lerp(startPos, dashTarget, a);
+                FaceTowards(dashTarget);
+                yield return null;
             }
 
-            // Keep laser visible for short duration
-            yield return new WaitForSeconds(0.3f);
+            // 🟢 همین‌جا پهپاد را به پول برگردان (بدون توجه به برخورد)
+            if (despawnAfterFirstAttack)
+            {
+                yield return new WaitForSeconds(0.05f); // کوچولو برای افکت
+                DespawnNow();
+                yield break;
+            }
 
-            // Disable visuals
-            laserLine.enabled = false;
-            spotLight.enabled = false;
-            if (telegraphVFX) telegraphVFX.Stop();
+            // اگر خواستی قدیمی بماند:
+            state = DroneState.Recovering;
+            hoverEnabled = true;
+            yield return new WaitForSeconds(recoverTime / Mathf.Max(0.2f, _attackCooldown_Internal));
+            state = DroneState.Wandering;
+            aggroValue = Mathf.Clamp01(aggroValue - 0.35f);
         }
 
-        private void HitPlayer(Vector3 hitPoint)
+        // ================== Portal Entry ==================
+        public void PlayPortalEntry(Transform portalPoint, float travelTime = 0.45f, float scaleTime = 0.25f)
         {
-            Debug.Log($"Player hit by {droneType} drone at {hitPoint}");
-            
-            // Add screen flash or damage effect here
-            // This should integrate with your health/lives system
-            CombatEvents.OnPlayerHit?.Invoke(hitPoint);
+            if (portalPoint == null) return;
 
-            // Heavy drone splash damage
-            if (droneType == DroneType.Heavy)
+            StopAllCoroutines();
+            KillAllTweens();
+
+            inPortalEntry = true;
+            hoverEnabled = false;
+
+            Vector3 finalPos = transform.position;
+            Vector3 startPos = portalPoint.position;
+
+            if (droneModel != null)
+                droneModel.localScale = Vector3.zero;
+
+            transform.position = startPos;
+
+            Sequence seq = DOTween.Sequence();
+            seq.Append(transform.DOMove(finalPos, travelTime).SetEase(Ease.OutQuad));
+            if (droneModel != null)
+                seq.Join(droneModel.DOScale(Vector3.one, scaleTime).SetEase(Ease.OutBack));
+
+            seq.OnComplete(() =>
             {
-                // Create explosion effect at hit point
-                if (destroyVFX)
-                {
-                    var explosion = Instantiate(destroyVFX, hitPoint, Quaternion.identity);
-                    Destroy(explosion.gameObject, 2f);
-                }
-            }
+                inPortalEntry = false;
+                hoverEnabled = true;
+                StartHoverAnimation();
+                state = DroneState.Wandering;
+                Debug.Log($"{gameObject.name} portal entry complete, now wandering. Player: {(player != null ? "assigned" : "null")}");
+            });
         }
 
-        private Material CreateTelegraphMaterial()
+        // ================== Utils ==================
+        private void KillAllTweens()
         {
-            Material mat = new Material(Shader.Find("Sprites/Default"));
-            mat.color = new Color(1f, 0f, 0f, 0.5f);
-            return mat;
-        }
-
-        public void TakeDamage(float damage = 1f)
-        {
-            if (isDestroyed) return;
-
-            health -= damage;
-            
-            if (health <= 0)
-            {
-                DestroyDrone();
-            }
-            else
-            {
-                // If not destroyed, get stunned (for Heavy drones)
-                StunDrone(1.5f);
-            }
+            if (hoverTween != null && hoverTween.IsActive()) hoverTween.Kill();
+            if (moveTween != null && moveTween.IsActive()) moveTween.Kill();
+            hoverTween = moveTween = null;
         }
 
         public void StunDrone(float duration)
         {
-            if (isDestroyed) return;
-
-            isStunned = true;
-            stunEndTime = Time.time + duration;
-
-            // Visual stun effect
-            if (droneModel != null)
+            if (IsDestroyed) return;
+            StopAllCoroutines();
+            state = DroneState.Stunned;
+            DOVirtual.DelayedCall(duration, () =>
             {
-                droneModel.transform.DOShakeRotation(duration, Vector3.one * 45f, 10, 90f);
+                if (!IsDestroyed) state = DroneState.Wandering;
+            });
+        }
+
+        public void ApplyDamage(float amount)
+        {
+            if (IsDestroyed) return;
+            hp -= Mathf.Abs(amount);
+            if (hp <= 0f)
+            {
+                state = DroneState.Destroyed;
+                _returnToPool?.Invoke(this);
             }
         }
 
+        public void DespawnNow() => _returnToPool?.Invoke(this);
+
+        // ===== Compatibility with existing callers (e.g., ShockwaveEmitter) =====
+        /// <summary>
+        /// Backward-compat: some scripts call DestroyDrone(). This will despawn the drone.
+        /// </summary>
         public void DestroyDrone()
         {
-            if (isDestroyed) return;
-
-            isDestroyed = true;
-
-            // Stop all animations
-            transform.DOKill();
-            if (droneModel) droneModel.transform.DOKill();
-
-            // Play destroy effects
-            if (destroyVFX) destroyVFX.Play();
-            if (audioSource && destroySound) audioSource.PlayOneShot(destroySound);
-
-            // Disable visuals
-            laserLine.enabled = false;
-            spotLight.enabled = false;
-            if (droneModel) droneModel.SetActive(false);
-
-            // Notify combat system
-            CombatEvents.OnDroneDestroyed?.Invoke(this);
-
-            // Destroy after effects finish
-            Destroy(gameObject, 2f);
-        }
-
-        void OnDrawGizmosSelected()
-        {
-            // Draw attack range
-            Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(transform.position, attackRange);
-            
-            // Draw telegraph direction
-            var target = FindPlayerTarget();
-            if (target != null)
-            {
-                Gizmos.color = Color.yellow;
-                Gizmos.DrawLine(transform.position, target.position);
-            }
+            if (IsDestroyed) return;
+            state = DroneState.Destroyed;
+            _returnToPool?.Invoke(this);
         }
     }
 }

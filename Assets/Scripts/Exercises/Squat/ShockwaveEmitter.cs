@@ -278,7 +278,7 @@ namespace CombatSystem.Combat
                 if (distance <= shockwaveRadius)
                 {
                     // Apply damage based on drone type
-                    switch (drone.Type)
+                    switch (drone.type)
                     {
                         case CombatSystem.Drones.DroneType.Scout:
                             // Scouts are destroyed instantly
@@ -287,10 +287,11 @@ namespace CombatSystem.Combat
                             
                         case CombatSystem.Drones.DroneType.Heavy:
                             // Heavy drones are stunned on first hit, destroyed on second
-                            if (drone.IsStunned)
+                            if (drone.state==CombatSystem.Drones.DroneState.Stunned)
                             {
-                                drone.DestroyDrone();
+                                drone.DestroyDrone();   
                             }
+                            
                             else
                             {
                                 drone.StunDrone(1.5f);
