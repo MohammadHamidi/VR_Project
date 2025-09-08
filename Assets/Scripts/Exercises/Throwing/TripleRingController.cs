@@ -423,8 +423,9 @@ namespace ThrowingExercise
 
         private void TrackBallMovement()
         {
-            // Find ball in scene
-            var ball = GameObject.FindWithTag("Throwable");
+            // Find the current active ball (preferably from BallSpawner, fallback to tag search)
+            GameObject ball = FindCurrentBall();
+
             if (ball != null)
             {
                 Vector3 currentPos = ball.transform.position;
@@ -437,6 +438,41 @@ namespace ThrowingExercise
                     FailTunnel("Ball stopped moving");
                 }
             }
+        }
+
+        private GameObject FindCurrentBall()
+        {
+            // Method 1: Try to get ball from BallSpawner (preferred)
+            var ballSpawner = FindObjectOfType<BallSpawner>();
+            if (ballSpawner != null)
+            {
+                GameObject spawnerBall = ballSpawner.GetCurrentBall();
+                if (spawnerBall != null)
+                {
+                    return spawnerBall;
+                }
+            }
+
+            // Method 2: Fallback to finding by tag (for compatibility)
+            GameObject ball = GameObject.FindWithTag("Throwable");
+            if (ball != null)
+            {
+                Debug.LogWarning("TripleRingController: Using fallback ball detection. Consider using BallSpawner for better tracking.");
+                return ball;
+            }
+
+            // Method 3: Find all throwable objects and pick the first active one
+            GameObject[] throwables = GameObject.FindGameObjectsWithTag("Throwable");
+            foreach (var throwable in throwables)
+            {
+                if (throwable.activeInHierarchy)
+                {
+                    Debug.LogWarning("TripleRingController: Multiple balls detected, using first active one.");
+                    return throwable;
+                }
+            }
+
+            return null;
         }
 
         private void CheckTunnelTimeout()

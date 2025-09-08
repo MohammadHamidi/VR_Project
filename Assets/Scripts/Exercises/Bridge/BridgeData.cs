@@ -1,7 +1,9 @@
+using UnityEngine;
+
 public class BridgeData
 {
-    public IBridgeComponent[] Planks { get; set; }
-    public IBridgeComponent[] Platforms { get; set; }
-    public IBridgeComponent[] Anchors { get; set; }
-    public IBridgeComponent[] Ropes { get; set; }
+    public GameObject[] Planks { get; set; }
+    public GameObject[] Platforms { get; set; }
+    public GameObject[] Anchors { get; set; }
+    public GameObject[] Ropes { get; set; }
 }

@@ -1,49 +1,41 @@
 using System.Collections.Generic;
 using UnityEngine;
-using GamePlay.Bridge;
 using Unity.XR.CoreUtils;
 
+public enum AnchorType { Standard, Improved, Invisible }
 
 public class SOLIDBridgeBuilder : MonoBehaviour
 {
-    [SerializeField] private BridgeConfiguration config;
-    [SerializeField] private AnchorFactory.AnchorType anchorType = AnchorFactory.AnchorType.Invisible; // Anchor type selector
+    [SerializeField] private BridgeConfig bridgeConfig;
+    [SerializeField] private AnchorType anchorType = AnchorType.Invisible;
     [SerializeField] private bool showGizmos = true;
     [SerializeField] private bool showRopeConnections = true;
     [SerializeField] private bool showPlayerSpawn = true;
-    [SerializeField] private bool showAnchorGizmos = false; // Option to show/hide anchor gizmos
+    [SerializeField] private bool showAnchorGizmos = false;
     [SerializeField] private XROrigin player;
 
-    // Dependencies with updated anchor factory
-    private readonly IBridgeComponentFactory<BridgePlank> plankFactory = new PlankFactory();
-    private readonly IBridgeComponentFactory<BridgePlatform> platformFactory = new PlatformFactory();
-    private AnchorFactory anchorFactory; // Will be initialized based on selected type
-    private readonly IPlayerPositioner playerPositioner = new UnityPlayerPositioner();
-    private readonly IPhysicsConnector physicsConnector = new BridgePhysicsConnector();
-    private readonly IBridgeValidator validator = new BridgeValidator();
+    private readonly BridgeComponentFactory componentFactory = new BridgeComponentFactory();
+    [SerializeField] private PlayerManager playerManager;
 
     private BridgeData currentBridge = new BridgeData();
     private bool bridgeBuilt = false;
 
     void Awake()
     {
-        // Initialize anchor factory with selected type
-        anchorFactory = new AnchorFactory(anchorType);
-    }
-
-    private void OnEnable() 
-    {
-        if (Application.isPlaying)
+        if (playerManager == null)
         {
-            BridgeStageEventHandler.onPlayerFall += TeleportPlayerToStart;
+            playerManager = FindObjectOfType<PlayerManager>();
+            if (playerManager == null)
+            {
+                GameObject pmObj = new GameObject("PlayerManager");
+                playerManager = pmObj.AddComponent<PlayerManager>();
+                pmObj.transform.SetParent(transform.parent);
+            }
         }
-    }
-    
-    private void OnDestroy() 
-    {
-        if (Application.isPlaying)
+
+        if (player != null && playerManager != null)
         {
-            BridgeStageEventHandler.onPlayerFall -= TeleportPlayerToStart;
+            playerManager.SetXROrigin(player);
         }
     }
 
@@ -65,27 +57,25 @@ public class SOLIDBridgeBuilder : MonoBehaviour
         }
 
         ClearExistingBridge();
-        
-        // Ensure anchor factory is initialized with current type
-        anchorFactory = new AnchorFactory(anchorType);
-        
-        var bridgeBuilder = new BridgeConstructionProcess(
-            config, transform, plankFactory, platformFactory, 
-            anchorFactory, physicsConnector);
-            
+
+        var bridgeBuilder = new SimplifiedBridgeConstruction(
+            bridgeConfig, transform, componentFactory, anchorType);
+
         currentBridge = bridgeBuilder.Build();
 
-        var validationResult = validator.Validate(currentBridge);
-        if (validationResult.IsValid)
+        if (ValidateBridge(currentBridge))
         {
             AddBridgeComponents();
-            if (config.autoPositionPlayer) TeleportPlayerToStart();
+
+            if (bridgeConfig.autoPositionPlayer)
+                TeleportPlayerToStart(); // will also notify tracker
+
             LogBuildSuccess();
             bridgeBuilt = true;
         }
         else
         {
-            LogValidationErrors(validationResult);
+            Debug.LogError("Bridge validation failed!");
         }
     }
 
@@ -97,25 +87,13 @@ public class SOLIDBridgeBuilder : MonoBehaviour
     }
 
     [ContextMenu("Change Anchor Type to Standard")]
-    public void ChangeToStandardAnchors()
-    {
-        anchorType = AnchorFactory.AnchorType.Standard;
-        RebuildBridge();
-    }
+    public void ChangeToStandardAnchors() { anchorType = AnchorType.Standard; RebuildBridge(); }
 
     [ContextMenu("Change Anchor Type to Improved")]
-    public void ChangeToImprovedAnchors()
-    {
-        anchorType = AnchorFactory.AnchorType.Improved;
-        RebuildBridge();
-    }
+    public void ChangeToImprovedAnchors() { anchorType = AnchorType.Improved; RebuildBridge(); }
 
     [ContextMenu("Change Anchor Type to Invisible")]
-    public void ChangeToInvisibleAnchors()
-    {
-        anchorType = AnchorFactory.AnchorType.Invisible;
-        RebuildBridge();
-    }
+    public void ChangeToInvisibleAnchors() { anchorType = AnchorType.Invisible; RebuildBridge(); }
 
     [ContextMenu("Hide Anchors")]
     public void HideAnchors()
@@ -124,14 +102,9 @@ public class SOLIDBridgeBuilder : MonoBehaviour
         {
             foreach (var anchor in currentBridge.Anchors)
             {
-                if (anchor?.GameObject != null)
-                {
-                    var renderer = anchor.GameObject.GetComponentInChildren<Renderer>();
-                    if (renderer != null)
-                    {
-                        renderer.enabled = false;
-                    }
-                }
+                if (!anchor) continue;
+                var renderer = anchor.GetComponentInChildren<Renderer>();
+                if (renderer != null) renderer.enabled = false;
             }
         }
         Debug.Log("Anchors hidden!");
@@ -144,14 +117,9 @@ public class SOLIDBridgeBuilder : MonoBehaviour
         {
             foreach (var anchor in currentBridge.Anchors)
             {
-                if (anchor?.GameObject != null)
-                {
-                    var renderer = anchor.GameObject.GetComponentInChildren<Renderer>();
-                    if (renderer != null)
-                    {
-                        renderer.enabled = true;
-                    }
-                }
+                if (!anchor) continue;
+                var renderer = anchor.GetComponentInChildren<Renderer>();
+                if (renderer != null) renderer.enabled = true;
             }
         }
         Debug.Log("Anchors shown!");
@@ -164,16 +132,12 @@ public class SOLIDBridgeBuilder : MonoBehaviour
         {
             foreach (var anchor in currentBridge.Anchors)
             {
-                if (anchor?.GameObject != null)
+                if (!anchor) continue;
+                var visual = anchor.transform.Find("Visual");
+                if (visual != null)
                 {
-                    var visual = anchor.GameObject.transform.Find("Visual");
-                    if (visual != null)
-                    {
-                        if (Application.isPlaying)
-                            Destroy(visual.gameObject);
-                        else
-                            DestroyImmediate(visual.gameObject);
-                    }
+                    if (Application.isPlaying) Destroy(visual.gameObject);
+                    else DestroyImmediate(visual.gameObject);
                 }
             }
         }
@@ -189,44 +153,37 @@ public class SOLIDBridgeBuilder : MonoBehaviour
             return;
         }
 
-        // Remove existing joints on platforms
         foreach (var platform in currentBridge.Platforms)
         {
-            if (platform?.GameObject != null)
+            if (!platform) continue;
+            var joints = platform.GetComponents<Joint>();
+            foreach (var joint in joints)
             {
-                var joints = platform.GameObject.GetComponents<Joint>();
-                foreach (var joint in joints)
-                {
-                    if (Application.isPlaying)
-                        Destroy(joint);
-                    else
-                        DestroyImmediate(joint);
-                }
+                if (Application.isPlaying) Destroy(joint);
+                else DestroyImmediate(joint);
             }
         }
 
-        // Reposition platforms for better alignment
         if (currentBridge.Platforms.Length >= 2 && currentBridge.Planks.Length > 0)
         {
             var startPlatform = currentBridge.Platforms[0];
             var firstPlank = currentBridge.Planks[0];
-            float targetStartZ = firstPlank.Position.z - (config.PlankLength * 0.5f + config.platformGap + config.platformLength * 0.5f);
-            startPlatform.GameObject.transform.position = new Vector3(0, 0, targetStartZ);
+            float targetStartZ = firstPlank.transform.position.z - (bridgeConfig.PlankLength * 0.5f + bridgeConfig.platformGap + bridgeConfig.platformLength * 0.5f);
+            startPlatform.transform.position = new Vector3(0, 0, targetStartZ);
 
             var endPlatform = currentBridge.Platforms[1];
             var lastPlank = currentBridge.Planks[currentBridge.Planks.Length - 1];
-            float targetEndZ = lastPlank.Position.z + (config.PlankLength * 0.5f + config.platformGap + config.platformLength * 0.5f);
-            endPlatform.GameObject.transform.position = new Vector3(0, 0, targetEndZ);
+            float targetEndZ = lastPlank.transform.position.z + (bridgeConfig.PlankLength * 0.5f + bridgeConfig.platformGap + bridgeConfig.platformLength * 0.5f);
+            endPlatform.transform.position = new Vector3(0, 0, targetEndZ);
         }
 
-        // Reconnect with improved connection system
         ConnectPlatformsToBridgeManual(currentBridge.Platforms, currentBridge.Planks);
         AddPlatformAnchorSupportsManual(currentBridge.Platforms, currentBridge.Anchors);
-        
+
         Debug.Log("Bridge connections fixed!");
     }
 
-    private void ConnectPlatformsToBridgeManual(IBridgeComponent[] platforms, IBridgeComponent[] planks)
+    private void ConnectPlatformsToBridgeManual(GameObject[] platforms, GameObject[] planks)
     {
         if (platforms.Length >= 2 && planks.Length > 0)
         {
@@ -235,55 +192,52 @@ public class SOLIDBridgeBuilder : MonoBehaviour
         }
     }
 
-    private void ConnectPlatformToPlankManual(IBridgeComponent platform, IBridgeComponent plank, bool isStartPlatform)
+    private void ConnectPlatformToPlankManual(GameObject platform, GameObject plank, bool isStartPlatform)
     {
-        var platformRb = platform.GameObject.GetComponent<Rigidbody>();
-        var plankRb = plank.GameObject.GetComponent<Rigidbody>();
-        
+        var platformRb = platform.GetComponent<Rigidbody>();
+        var plankRb = plank.GetComponent<Rigidbody>();
         if (platformRb == null || plankRb == null) return;
 
-        var fixedJoint = platform.GameObject.AddComponent<FixedJoint>();
+        var fixedJoint = platform.AddComponent<FixedJoint>();
         fixedJoint.connectedBody = plankRb;
-        
+
         if (isStartPlatform)
         {
-            fixedJoint.anchor = new Vector3(0, 0, config.platformLength * 0.5f);
-            fixedJoint.connectedAnchor = new Vector3(0, 0, -config.PlankLength * 0.5f);
+            fixedJoint.anchor = new Vector3(0, 0, bridgeConfig.platformLength * 0.5f);
+            fixedJoint.connectedAnchor = new Vector3(0, 0, -bridgeConfig.PlankLength * 0.5f);
         }
         else
         {
-            fixedJoint.anchor = new Vector3(0, 0, -config.platformLength * 0.5f);
-            fixedJoint.connectedAnchor = new Vector3(0, 0, config.PlankLength * 0.5f);
+            fixedJoint.anchor = new Vector3(0, 0, -bridgeConfig.platformLength * 0.5f);
+            fixedJoint.connectedAnchor = new Vector3(0, 0, bridgeConfig.PlankLength * 0.5f);
         }
 
-        var springJoint = platform.GameObject.AddComponent<SpringJoint>();
+        var springJoint = platform.AddComponent<SpringJoint>();
         springJoint.connectedBody = plankRb;
         springJoint.anchor = fixedJoint.anchor;
         springJoint.connectedAnchor = fixedJoint.connectedAnchor;
-        springJoint.spring = config.jointSpring * 5f;
-        springJoint.damper = config.jointDamper * 3f;
+        springJoint.spring = bridgeConfig.jointSpring * 5f;
+        springJoint.damper = bridgeConfig.jointDamper * 3f;
         springJoint.maxDistance = 0.05f;
         springJoint.minDistance = 0f;
     }
 
-    private void AddPlatformAnchorSupportsManual(IBridgeComponent[] platforms, IBridgeComponent[] anchors)
+    private void AddPlatformAnchorSupportsManual(GameObject[] platforms, GameObject[] anchors)
     {
         if (platforms.Length >= 2 && anchors.Length >= 2)
         {
-            // Start platform to start anchor
-            var supportJoint1 = platforms[0].GameObject.AddComponent<SpringJoint>();
-            supportJoint1.connectedBody = anchors[0].GameObject.GetComponent<Rigidbody>();
-            supportJoint1.anchor = new Vector3(0, 0, config.platformLength * 0.4f);
-            supportJoint1.spring = config.jointSpring * 2f;
-            supportJoint1.damper = config.jointDamper * 2f;
+            var supportJoint1 = platforms[0].AddComponent<SpringJoint>();
+            supportJoint1.connectedBody = anchors[0].GetComponent<Rigidbody>();
+            supportJoint1.anchor = new Vector3(0, 0, bridgeConfig.platformLength * 0.4f);
+            supportJoint1.spring = bridgeConfig.jointSpring * 2f;
+            supportJoint1.damper = bridgeConfig.jointDamper * 2f;
             supportJoint1.maxDistance = 0.2f;
 
-            // End platform to end anchor
-            var supportJoint2 = platforms[1].GameObject.AddComponent<SpringJoint>();
-            supportJoint2.connectedBody = anchors[1].GameObject.GetComponent<Rigidbody>();
-            supportJoint2.anchor = new Vector3(0, 0, -config.platformLength * 0.4f);
-            supportJoint2.spring = config.jointSpring * 2f;
-            supportJoint2.damper = config.jointDamper * 2f;
+            var supportJoint2 = platforms[1].AddComponent<SpringJoint>();
+            supportJoint2.connectedBody = anchors[1].GetComponent<Rigidbody>();
+            supportJoint2.anchor = new Vector3(0, 0, -bridgeConfig.platformLength * 0.4f);
+            supportJoint2.spring = bridgeConfig.jointSpring * 2f;
+            supportJoint2.damper = bridgeConfig.jointDamper * 2f;
             supportJoint2.maxDistance = 0.2f;
         }
     }
@@ -291,31 +245,31 @@ public class SOLIDBridgeBuilder : MonoBehaviour
     private void ClearExistingBridge()
     {
         bridgeBuilt = false;
-        
+
         var children = new Transform[transform.childCount];
         for (int i = 0; i < transform.childCount; i++)
             children[i] = transform.GetChild(i);
 
         foreach (var child in children)
         {
-            if (Application.isPlaying)
-                Destroy(child.gameObject);
-            else
-                DestroyImmediate(child.gameObject);
+            if (Application.isPlaying) Destroy(child.gameObject);
+            else DestroyImmediate(child.gameObject);
         }
     }
 
     private void AddBridgeComponents()
     {
-        // Add balance checker to middle plank
-        if (currentBridge.Planks?.Length > 0)
+        // Add/Find BridgeTracker on the root
+        var bridgeTracker = GetComponent<BridgeTracker>();
+        if (bridgeTracker == null) bridgeTracker = gameObject.AddComponent<BridgeTracker>();
+
+        // Set the start/end for progress calc
+        if (currentBridge.Platforms?.Length >= 2)
         {
-            int middlePlank = currentBridge.Planks.Length / 2;
-            var balanceChecker = currentBridge.Planks[middlePlank].GameObject.GetComponent<BalanceChecker>();
-            if (balanceChecker == null)
-            {
-                currentBridge.Planks[middlePlank].GameObject.AddComponent<BalanceChecker>();
-            }
+            bridgeTracker.SetBridgePoints(
+                currentBridge.Platforms[0].transform,
+                currentBridge.Platforms[1].transform
+            );
         }
 
         CreateBridgeGoal();
@@ -323,12 +277,12 @@ public class SOLIDBridgeBuilder : MonoBehaviour
 
     private void CreateBridgeGoal()
     {
-        GameObject goalParent = currentBridge.Platforms?.Length > 1 ? 
-            currentBridge.Platforms[1]?.GameObject : transform.gameObject;
-        
-        Vector3 goalPosition = currentBridge.Platforms?.Length > 1 ? 
-            new Vector3(0, config.platformThickness * 0.5f, 0) :
-            new Vector3(0, 0, config.totalBridgeLength * 0.5f + 0.5f);
+        GameObject goalParent = currentBridge.Platforms?.Length > 1 ?
+            currentBridge.Platforms[1] : transform.gameObject;
+
+        Vector3 goalPosition = currentBridge.Platforms?.Length > 1 ?
+            new Vector3(0, bridgeConfig.platformThickness * 0.5f, 0) :
+            new Vector3(0, 0, bridgeConfig.totalBridgeLength * 0.5f + 0.5f);
 
         var goal = new GameObject("BridgeGoal");
         goal.transform.SetParent(goalParent.transform, false);
@@ -337,147 +291,133 @@ public class SOLIDBridgeBuilder : MonoBehaviour
         var trigger = goal.AddComponent<BoxCollider>();
         trigger.isTrigger = true;
         trigger.size = currentBridge.Platforms?.Length > 1 ?
-            new Vector3(config.platformWidth * 0.8f, 2f, config.platformLength * 0.8f) :
-            new Vector3(config.plankWidth + 0.5f, 2f, 1f);
+            new Vector3(bridgeConfig.platformWidth * 0.8f, 2f, bridgeConfig.platformLength * 0.8f) :
+            new Vector3(bridgeConfig.plankWidth + 0.5f, 2f, 1f);
 
         goal.AddComponent<BridgeGoal>();
     }
 
     public void TeleportPlayerToStart()
     {
-        if (currentBridge.Platforms?.Length > 0)
+        if (currentBridge.Platforms?.Length > 0 && playerManager != null)
         {
-            Vector3 targetPosition = currentBridge.Platforms[0].Position;
-            
-            bool positioned = false;
-            if (player != null)
-            {
-                Vector3 finalPosition = targetPosition + config.playerSpawnOffset;
-                player.transform.position = finalPosition;
-                player.transform.rotation = Quaternion.LookRotation(Vector3.forward);
-                Debug.Log($"Player positioned using direct reference at {finalPosition}");
-                positioned = true;
-            }
-            
+            Transform start = currentBridge.Platforms[0].transform;
+            Transform end   = currentBridge.Platforms.Length > 1 ? currentBridge.Platforms[1].transform : null;
+
+            bool positioned = playerManager.PositionAtBridgeStart(
+                currentBridge.Platforms[0],
+                end,
+                bridgeConfig.playerSpawnOffset
+            );
+
             if (!positioned)
             {
-                positioned = playerPositioner.PositionPlayer(targetPosition, config.playerSpawnOffset);
+                Debug.LogWarning("PlayerManager: Failed to position player at bridge start.");
             }
-            
-            if (!positioned)
+            else
             {
-                Debug.LogWarning("Could not position player. Please ensure XROrigin is assigned or present in scene.");
+                // IMPORTANT: grant a teleport grace window to avoid instant failure
+                var tracker = GetComponent<BridgeTracker>();
+                if (tracker != null) tracker.NotifyTeleported();
             }
         }
         else
         {
-            Debug.LogWarning("No start platform found for player positioning.");
+            Debug.LogWarning("No start platform found or PlayerManager not available for player positioning.");
         }
     }
 
     private void LogBuildSuccess()
     {
-        string platformInfo = config.createPlatforms ? " with start/end platforms" : "";
-        string ropeInfo = (config.useRopes && currentBridge.Ropes?.Length > 0) ? " and rope supports" : "";
+        string platformInfo = bridgeConfig.enablePlatforms ? " with start/end platforms" : "";
         string anchorInfo = $" using {anchorType} anchors";
-        Debug.Log($"Bridge validation passed! Created {currentBridge.Planks?.Length ?? 0} planks{platformInfo}{ropeInfo}{anchorInfo}");
+        Debug.Log($"Bridge validation passed! Created {currentBridge.Planks?.Length ?? 0} planks{platformInfo}{anchorInfo}");
     }
 
-    private void LogValidationErrors(ValidationResult result)
+    private bool ValidateBridge(BridgeData bridgeData)
     {
-        foreach (var error in result.Errors)
-            Debug.LogError($"Bridge validation error: {error}");
-        
-        foreach (var warning in result.Warnings)
-            Debug.LogWarning($"Bridge validation warning: {warning}");
+        if (bridgeData.Planks == null || bridgeData.Planks.Length == 0)
+        {
+            Debug.LogError("Bridge validation failed: No planks found");
+            return false;
+        }
+
+        foreach (var plank in bridgeData.Planks)
+        {
+            if (!plank) { Debug.LogError("Bridge validation failed: Invalid plank found"); return false; }
+            if (plank.GetComponent<Rigidbody>() == null)
+                Debug.LogWarning("Bridge validation warning: Plank missing Rigidbody");
+        }
+
+        if (bridgeData.Platforms != null)
+        {
+            foreach (var platform in bridgeData.Platforms)
+            {
+                if (!platform) { Debug.LogError("Bridge validation failed: Invalid platform found"); return false; }
+            }
+        }
+
+        return true;
     }
 
     public void SetBridgeConfiguration(int planks, float length, float width)
     {
-        config.numberOfPlanks = planks;
-        config.totalBridgeLength = length;
-        config.plankWidth = width;
+        if (bridgeConfig != null)
+        {
+            bridgeConfig.plankCount = planks;
+            bridgeConfig.bridgeLength = length;
+            bridgeConfig.plankWidth = width;
+        }
         bridgeBuilt = false;
         if (Application.isPlaying) BuildBridge();
     }
 
-    /// <summary>
-    /// Sets the anchor type and rebuilds the bridge
-    /// </summary>
-    public void SetAnchorType(AnchorFactory.AnchorType newAnchorType)
+    public void SetAnchorType(AnchorType newAnchorType)
     {
         anchorType = newAnchorType;
-        anchorFactory = new AnchorFactory(anchorType);
         bridgeBuilt = false;
         if (Application.isPlaying) BuildBridge();
     }
 
-    /// <summary>
-    /// Gets the current bridge configuration
-    /// </summary>
-    public BridgeConfiguration GetBridgeConfiguration()
+    public BridgeConfig GetBridgeConfiguration() => bridgeConfig;
+    public void SetBridgeConfiguration(BridgeConfig newConfig)
     {
-        return config;
-    }
-
-    /// <summary>
-    /// Sets the bridge configuration
-    /// </summary>
-    public void SetBridgeConfiguration(BridgeConfiguration newConfig)
-    {
-        config = newConfig;
+        bridgeConfig = newConfig;
         bridgeBuilt = false;
         if (Application.isPlaying) BuildBridge();
     }
+    public AnchorType GetAnchorType() => anchorType;
 
-    /// <summary>
-    /// Gets the current anchor type
-    /// </summary>
-    public AnchorFactory.AnchorType GetAnchorType()
-    {
-        return anchorType;
-    }
-
-    public IBridgeComponent[] GetPlanks() => currentBridge.Planks ?? new IBridgeComponent[0];
-    public IBridgeComponent GetStartPlatform() => currentBridge.Platforms?.Length > 0 ? currentBridge.Platforms[0] : null;
-    public IBridgeComponent GetEndPlatform() => currentBridge.Platforms?.Length > 1 ? currentBridge.Platforms[1] : null;
+    public GameObject[] GetPlanks() => currentBridge.Planks ?? new GameObject[0];
+    public GameObject GetStartPlatform() => currentBridge.Platforms?.Length > 0 ? currentBridge.Platforms[0] : null;
+    public GameObject GetEndPlatform() => currentBridge.Platforms?.Length > 1 ? currentBridge.Platforms[1] : null;
 
     private void OnDrawGizmos()
     {
-        if (!showGizmos || config == null) return;
-        
-        var gizmoRenderer = new BridgeGizmoRenderer(config, transform, showPlayerSpawn);
+        if (!showGizmos || bridgeConfig == null) return;
+
+        var gizmoRenderer = new BridgeGizmoRenderer(bridgeConfig, transform, showPlayerSpawn);
         gizmoRenderer.DrawBridgeGizmos();
-        
-        // Draw anchor gizmos if enabled
+
         if (showAnchorGizmos && currentBridge.Anchors != null)
         {
             Gizmos.color = Color.red;
             foreach (var anchor in currentBridge.Anchors)
             {
-                if (anchor?.GameObject != null)
-                {
-                    Gizmos.DrawWireSphere(anchor.Position, 0.2f);
-                }
+                if (anchor != null) Gizmos.DrawWireSphere(anchor.transform.position, 0.2f);
             }
         }
     }
 
     void OnValidate()
     {
-        if (config != null)
+        if (bridgeConfig != null)
         {
-            config.numberOfPlanks = Mathf.Clamp(config.numberOfPlanks, 1, 20);
-            config.totalBridgeLength = Mathf.Clamp(config.totalBridgeLength, 1f, 50f);
-            config.plankWidth = Mathf.Clamp(config.plankWidth, 0.1f, 2f);
-            config.plankThickness = Mathf.Clamp(config.plankThickness, 0.01f, 0.5f);
-            config.plankGap = Mathf.Clamp(config.plankGap, 0f, 1f);
-        }
-        
-        // Reinitialize anchor factory if type changed
-        if (anchorFactory == null || Application.isPlaying)
-        {
-            anchorFactory = new AnchorFactory(anchorType);
+            bridgeConfig.plankCount = Mathf.Clamp(bridgeConfig.plankCount, 1, 20);
+            bridgeConfig.bridgeLength = Mathf.Clamp(bridgeConfig.bridgeLength, 1f, 50f);
+            bridgeConfig.plankWidth = Mathf.Clamp(bridgeConfig.plankWidth, 0.1f, 2f);
+            bridgeConfig.plankThickness = Mathf.Clamp(bridgeConfig.plankThickness, 0.01f, 0.5f);
+            bridgeConfig.plankGap = Mathf.Clamp(bridgeConfig.plankGap, 0f, 1f);
         }
     }
 }

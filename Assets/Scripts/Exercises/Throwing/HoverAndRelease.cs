@@ -11,12 +11,18 @@ public class HoverAndRelease : MonoBehaviour
     public float rotationDuration = 5f;
 
     [Header("Release Settings")]
+    [Tooltip("Initial velocity multiplier when released")]
+    public float releaseVelocityMultiplier = 2f;
+    [Tooltip("Use custom gravity strength (0 = no custom gravity, 1 = normal gravity, 0.5 = half gravity)")]
+    [Range(0f, 2f)]
+    public float customGravityStrength = 0f; // 0 = use Unity gravity, >0 = custom gravity
+
     private Rigidbody rb;
     private XRGrabInteractable grab;
     private float startY;
 
-    // When true, we apply half‐strength gravity manually in FixedUpdate
-    private bool applyCustomGravity = false;
+    // Gravity state
+    private bool useCustomGravity = false;
 
     void Awake()
     {
@@ -53,26 +59,87 @@ public class HoverAndRelease : MonoBehaviour
         // 1) Kill any ongoing Rigidbody tween
         DOTween.Kill(rb);
 
-        // 2) Stop using built‐in gravity and begin applying custom half‐gravity
-        rb.useGravity = true;
-        applyCustomGravity = true;
+        // 2) Setup gravity system
+        if (customGravityStrength > 0f)
+        {
+            // Use custom gravity strength
+            rb.useGravity = false;
+            useCustomGravity = true;
+        }
+        else
+        {
+            // Use Unity's built-in gravity
+            rb.useGravity = true;
+            useCustomGravity = false;
+        }
 
-        // 3) Give the ball a strong initial velocity so it flies off quickly
-       
+        // 3) Give the ball initial velocity based on how it was thrown
+        ApplyReleaseVelocity(args);
     }
 
-    // void FixedUpdate()
-    // {
-    //     if (applyCustomGravity)
-    //     {
-    //         // Apply half-strength gravity manually (ForceMode.Acceleration ignores mass)
-    //         rb.AddForce(Physics.gravity *0.504f, ForceMode.Acceleration);
-    //     }
-    // }
+    void FixedUpdate()
+    {
+        if (useCustomGravity && customGravityStrength > 0f)
+        {
+            // Apply custom gravity strength
+            rb.AddForce(Physics.gravity * customGravityStrength, ForceMode.Acceleration);
+        }
+    }
+
+    private void ApplyReleaseVelocity(SelectExitEventArgs args)
+    {
+        if (args.interactorObject == null) return;
+
+        // Get the velocity from the interactor (hand/controller)
+        var interactor = args.interactorObject as XRBaseInteractor;
+        if (interactor == null) return;
+
+        // Try to get velocity from the interactor's attach transform or rigidbody
+        Vector3 releaseVelocity = Vector3.zero;
+
+        // Method 1: Check if interactor has velocity tracking
+        var interactorRigidbody = interactor.GetComponent<Rigidbody>();
+        if (interactorRigidbody != null)
+        {
+            releaseVelocity = interactorRigidbody.velocity;
+        }
+
+        // Method 2: Use attach transform velocity if available
+        if (releaseVelocity.magnitude < 0.1f && interactor.attachTransform != null)
+        {
+            var attachRigidbody = interactor.attachTransform.GetComponent<Rigidbody>();
+            if (attachRigidbody != null)
+            {
+                releaseVelocity = attachRigidbody.velocity;
+            }
+        }
+
+        // Method 3: Fallback - use current ball velocity
+        if (releaseVelocity.magnitude < 0.1f)
+        {
+            releaseVelocity = rb.velocity;
+        }
+
+        // Apply velocity multiplier
+        if (releaseVelocity.magnitude > 0.1f)
+        {
+            rb.velocity = releaseVelocity * releaseVelocityMultiplier;
+        }
+        else
+        {
+            // Minimum throw velocity if barely moving
+            rb.velocity = transform.forward * releaseVelocityMultiplier * 2f;
+        }
+
+        Debug.Log($"Ball released with velocity: {rb.velocity.magnitude:F2} m/s");
+    }
 
     void OnDisable()
     {
         DOTween.Kill(rb);
-        grab.selectExited.RemoveListener(OnRelease);
+        if (grab != null)
+        {
+            grab.selectExited.RemoveListener(OnRelease);
+        }
     }
 }

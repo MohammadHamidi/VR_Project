@@ -26,7 +26,7 @@ namespace VRRehab.SceneSetup
         [SerializeField] private GameObject ballPrefab;
         [SerializeField] private GameObject targetRingPrefab;
         [SerializeField] private GameObject spawnZonePrefab;
-        [SerializeField] private BridgeConfiguration bridgeConfig;
+        [SerializeField] private BridgeConfig bridgeConfig;
         [SerializeField] private int numberOfRings = 5;
 
         public enum SceneType
@@ -277,7 +277,7 @@ namespace VRRehab.SceneSetup
                 if (bridgeConfig != null)
                 {
                     bridgeBuilder.SetBridgeConfiguration(bridgeConfig);
-                    bridgeBuilder.SetAnchorType(AnchorFactory.AnchorType.Standard);
+                    bridgeBuilder.SetAnchorType(AnchorType.Standard);
                 }
             }
 

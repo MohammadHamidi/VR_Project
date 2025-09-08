@@ -12,8 +12,8 @@ namespace VRRehab.SceneSetup
         [SerializeField] private GameObject canvasPrefab;
 
         [Header("Bridge Configuration")]
-        [SerializeField] private BridgeConfiguration bridgeConfig;
-        [SerializeField] private AnchorFactory.AnchorType anchorType = AnchorFactory.AnchorType.Standard;
+        [SerializeField] private BridgeConfig bridgeConfig;
+        [SerializeField] private AnchorType anchorType = AnchorType.Standard;
 
         [Header("Scene Objects")]
         [SerializeField] private GameObject groundPlane;
@@ -100,14 +100,12 @@ namespace VRRehab.SceneSetup
             else
             {
                 // Create default configuration
-                bridgeConfig = new BridgeConfiguration();
-                bridgeConfig.numberOfPlanks = 8;
-                bridgeConfig.totalBridgeLength = 12f;
-                bridgeConfig.plankWidth = 1.5f;
-                bridgeConfig.createPlatforms = true;
+                bridgeConfig = BridgeConfig.CreateDefault();
+                // Note: Legacy properties are now read-only for backward compatibility
+                // Use the new property names directly on the BridgeConfig instance
 
                 bridgeBuilder.SetBridgeConfiguration(bridgeConfig);
-                bridgeBuilder.SetAnchorType(AnchorFactory.AnchorType.Standard);
+                bridgeBuilder.SetAnchorType(AnchorType.Standard);
             }
 
             // Build the bridge
@@ -134,12 +132,8 @@ namespace VRRehab.SceneSetup
                 uiManager.AddComponent<UIManager>();
             }
 
-            // Setup Bridge UI Controller if needed
-            if (FindObjectOfType<BridgeUIController>() == null)
-            {
-                GameObject uiController = new GameObject("BridgeUIController");
-                uiController.AddComponent<BridgeUIController>();
-            }
+            // UI components are now created automatically by BridgeTracker
+            // BalanceUI and ProgressUI components are handled by the new system
         }
 
         // Public methods for runtime configuration
@@ -147,18 +141,22 @@ namespace VRRehab.SceneSetup
         {
             if (bridgeConfig != null)
             {
-                bridgeConfig.numberOfPlanks = planks;
-                bridgeConfig.totalBridgeLength = length;
-                bridgeConfig.plankWidth = width;
+                // Legacy properties are now read-only, use the new approach
+                var newConfig = BridgeConfig.CreateDefault();
+                newConfig.plankCount = planks;
+                newConfig.bridgeLength = length;
+                newConfig.plankWidth = width;
+
+                bridgeConfig = newConfig;
 
                 if (bridgeBuilder != null)
                 {
-                    bridgeBuilder.RebuildBridge();
+                    bridgeBuilder.SetBridgeConfiguration(newConfig);
                 }
             }
         }
 
-        public void ChangeAnchorType(AnchorFactory.AnchorType newType)
+        public void ChangeAnchorType(AnchorType newType)
         {
             anchorType = newType;
             if (bridgeBuilder != null)

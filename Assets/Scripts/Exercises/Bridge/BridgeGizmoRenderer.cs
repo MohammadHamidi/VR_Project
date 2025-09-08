@@ -3,11 +3,11 @@ using UnityEngine;
 
 public class BridgeGizmoRenderer
 {
-    private readonly BridgeConfiguration config;
+    private readonly BridgeConfig config;
     private readonly Transform transform;
     private readonly bool showPlayerSpawn;
 
-    public BridgeGizmoRenderer(BridgeConfiguration config, Transform transform, bool showPlayerSpawn)
+    public BridgeGizmoRenderer(BridgeConfig config, Transform transform, bool showPlayerSpawn)
     {
         this.config = config;
         this.transform = transform;
