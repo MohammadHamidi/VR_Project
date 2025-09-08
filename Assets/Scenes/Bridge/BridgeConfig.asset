@@ -25,8 +25,8 @@ MonoBehaviour:
   platformMass: 50
   jointSpring: 30
   jointDamper: 2
-  plankMaterial: {fileID: 7390553463975553142, guid: 7ab6f3b0fd1a6ba41b2a47766c16613f, type: 3}
-  platformMaterial: {fileID: 2100000, guid: cf0d1bf076da844a0b05a1295ee0b28d, type: 2}
-  anchorMaterial: {fileID: 2100000, guid: 9c0b6b3015a9c44e7be0ce09d4e89c1c, type: 2}
+  plankMaterial: {fileID: 2100000, guid: cf0d1bf076da844a0b05a1295ee0b28d, type: 2}
+  platformMaterial: {fileID: 2100000, guid: 9c0b6b3015a9c44e7be0ce09d4e89c1c, type: 2}
+  anchorMaterial: {fileID: 2100000, guid: cf0d1bf076da844a0b05a1295ee0b28d, type: 2}
   autoPositionPlayer: 1
   playerSpawnOffset: {x: 0, y: 1.8, z: 0}

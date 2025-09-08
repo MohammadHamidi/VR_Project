@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.XR.CoreUtils;
@@ -257,13 +258,22 @@ public class SOLIDBridgeBuilder : MonoBehaviour
         }
     }
 
+    // Add this method to ensure proper positioning
+    private IEnumerator PositionPlayerAfterPhysicsSettle()
+    {
+        // Wait for physics to settle
+        yield return new WaitForFixedUpdate();
+        yield return new WaitForFixedUpdate();
+    
+        TeleportPlayerToStart();
+    }
+
+// Modify AddBridgeComponents() to use the coroutine
     private void AddBridgeComponents()
     {
-        // Add/Find BridgeTracker on the root
         var bridgeTracker = GetComponent<BridgeTracker>();
         if (bridgeTracker == null) bridgeTracker = gameObject.AddComponent<BridgeTracker>();
 
-        // Set the start/end for progress calc
         if (currentBridge.Platforms?.Length >= 2)
         {
             bridgeTracker.SetBridgePoints(
@@ -273,6 +283,10 @@ public class SOLIDBridgeBuilder : MonoBehaviour
         }
 
         CreateBridgeGoal();
+    
+        // Use coroutine for better timing
+        if (bridgeConfig.autoPositionPlayer)
+            StartCoroutine(PositionPlayerAfterPhysicsSettle());
     }
 
     private void CreateBridgeGoal()

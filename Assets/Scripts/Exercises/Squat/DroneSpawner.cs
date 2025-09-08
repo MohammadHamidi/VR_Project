@@ -230,17 +230,20 @@ private IEnumerator SpawnRandomDrone(WaveConfiguration config, bool forcePortal 
             spawnPos = portalPoint.position;
             usePortal = true;
         }
+
+        // For portal spawns, ignore distance checks - spawn at exact portal position
+        Debug.Log($"Portal spawn at: {spawnPos} (portal index: {portalIndex})");
     }
     else
     {
         spawnPos = GetFallbackSpawnPosition();
         usePortal = false;
-    }
-
-    if (!IsFarEnoughFromOthers(spawnPos, minDistanceBetweenDrones))
-    {
-        spawnPos = GetFallbackSpawnPosition();
-        usePortal = false;
+        
+        // Only check distance for fallback spawns
+        if (!IsFarEnoughFromOthers(spawnPos, minDistanceBetweenDrones))
+        {
+            spawnPos = GetFallbackSpawnPosition();
+        }
     }
 
     DroneController drone = GetFromPool(prefab);
@@ -249,13 +252,13 @@ private IEnumerator SpawnRandomDrone(WaveConfiguration config, bool forcePortal 
     if (drone.player == null && playerTransform != null)
         drone.player = playerTransform;
 
-    // جهت اولیه
+    // Initial direction
     Vector3 lookAt = (portalPoint != null ? portalPoint.position + portalPoint.forward : spawnPos + Vector3.forward);
     Vector3 dir = (lookAt - spawnPos); dir.y = 0f;
     if (dir.sqrMagnitude > 0.0001f)
         drone.transform.rotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
 
-    drone.OnSpawned();               // 🟢 homePosition اینجا ذخیره می‌شود
+    drone.OnSpawned();
 
     ApplyWaveDifficulty(drone, config);
 
@@ -263,11 +266,15 @@ private IEnumerator SpawnRandomDrone(WaveConfiguration config, bool forcePortal 
     CombatEvents.OnDroneSpawned?.Invoke(drone);
     CombatEvents.OnActiveDronesCountChanged?.Invoke(activeDrones.Count);
 
-    if (usePortal && portalIndex >= 0)
+    if (usePortal && portalIndex >= 0 && portalPoint != null)
     {
         portalController.TriggerSpawnEffect(portalIndex);
-        if (portalPoint != null)
-            drone.PlayPortalEntry(portalPoint);
+        drone.PlayPortalEntry(portalPoint);
+        Debug.Log($"Playing portal entry for drone at: {drone.transform.position}");
+    }
+    else
+    {
+        Debug.Log($"Fallback spawn for drone at: {drone.transform.position}");
     }
 
     System.Action<DroneController> onDestroyed = null;
@@ -284,7 +291,6 @@ private IEnumerator SpawnRandomDrone(WaveConfiguration config, bool forcePortal 
 
     yield return null;
 }
-
         // ================== Positions ==================
         private Vector3 GetFallbackSpawnPosition()
         {
