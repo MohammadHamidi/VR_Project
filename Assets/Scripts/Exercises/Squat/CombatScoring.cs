@@ -2,6 +2,7 @@ using UnityEngine;
 using CombatSystem.Events;
 using CombatSystem.Drones;
 using DG.Tweening;
+using TMPro;
 
 namespace CombatSystem.Combat
 {
@@ -24,9 +25,9 @@ namespace CombatSystem.Combat
         [SerializeField] private Color comboTextColor = Color.yellow;
 
         [Header("UI References")]
-        [SerializeField] private UnityEngine.UI.Text scoreText;
-        [SerializeField] private UnityEngine.UI.Text livesText;
-        [SerializeField] private UnityEngine.UI.Text comboText;
+        [SerializeField] private TextMeshProUGUI scoreText;
+        [SerializeField] private TextMeshProUGUI livesText;
+        [SerializeField] private TextMeshProUGUI comboText;
         [SerializeField] private UnityEngine.UI.Image[] lifeIcons;
 
         [Header("Audio Feedback")]
@@ -102,6 +103,7 @@ namespace CombatSystem.Combat
         {
             CombatEvents.OnPlayerDodge += HandlePlayerDodge;
             CombatEvents.OnPlayerHit += HandlePlayerHit;
+            CombatEvents.OnPlayerTakeDamage += HandlePlayerTakeDamage; // Added missing subscription
             CombatEvents.OnValidSquat += HandleValidSquat;
             CombatEvents.OnDroneDestroyed += HandleDroneDestroyed;
         }
@@ -110,6 +112,7 @@ namespace CombatSystem.Combat
         {
             CombatEvents.OnPlayerDodge -= HandlePlayerDodge;
             CombatEvents.OnPlayerHit -= HandlePlayerHit;
+            CombatEvents.OnPlayerTakeDamage -= HandlePlayerTakeDamage; // Added missing unsubscription
             CombatEvents.OnValidSquat -= HandleValidSquat;
             CombatEvents.OnDroneDestroyed -= HandleDroneDestroyed;
         }
@@ -152,6 +155,13 @@ namespace CombatSystem.Combat
         {
             LoseLife();
             ResetCombo();
+        }
+
+        private void HandlePlayerTakeDamage(float damageAmount)
+        {
+            LoseLife();
+            ResetCombo();
+            Debug.Log($"CombatScoring: Player took {damageAmount} damage, lives remaining: {CurrentLives}");
         }
 
         private void HandleValidSquat(float depthNorm, float quality)
@@ -272,7 +282,7 @@ namespace CombatSystem.Combat
                     HandleGameOver();
                 }
                 
-                Debug.Log($"Life lost! Lives remaining: {CurrentLives}");
+                Debug.Log($"CombatScoring: Life lost! Lives remaining: {CurrentLives}");
             }
         }
 
@@ -419,6 +429,31 @@ namespace CombatSystem.Combat
                 highestCombo = highestCombo,
                 livesRemaining = CurrentLives
             };
+        }
+
+        /// <summary>
+        /// Gets wave success based on current session performance
+        /// </summary>
+        public bool GetWaveSuccess()
+        {
+            // Consider wave successful if player still has lives and has achieved some score
+            return !IsGameOver && CurrentScore > 0;
+        }
+
+        /// <summary>
+        /// Gets current wave score based on session performance
+        /// </summary>
+        public float GetWaveScore()
+        {
+            if (IsGameOver) return 0f;
+
+            // Calculate score based on various factors
+            float baseScore = CurrentScore;
+            float lifeBonus = CurrentLives * 50f; // Bonus for remaining lives
+            float comboBonus = ComboLevel * 25f; // Bonus for current combo
+            float performanceMultiplier = 1f + (sessionPerfectSquats * 0.1f); // Bonus for perfect squats
+
+            return (baseScore + lifeBonus + comboBonus) * performanceMultiplier;
         }
 
         // Debug methods

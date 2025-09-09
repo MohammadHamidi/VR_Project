@@ -13,6 +13,7 @@ namespace CombatSystem.Combat
         [SerializeField] private LayerMask affectedLayers = -1;
         [SerializeField] private float knockbackForce = 15f;
         [SerializeField] private float upwardForce = 5f;
+        [SerializeField] private float shockwaveDamage = 50f; // Base damage for shockwave
 
         [Header("Visual Effects")]
         [SerializeField] private GameObject shockwaveRingPrefab;
@@ -32,6 +33,7 @@ namespace CombatSystem.Combat
         private PowerMeter powerMeter;
         private CombatSystem.Player.SquatDodge squatDodge;
         private bool wasSquattingLastFrame;
+        private bool wasOverchargedLastFrame;
 
         // Ring materials for shockwave effect
         private Material shockwaveRingMaterial;
@@ -77,11 +79,13 @@ namespace CombatSystem.Combat
         private void SubscribeToEvents()
         {
             CombatEvents.OnOverchargeStateChanged += HandleOverchargeStateChanged;
+            CombatEvents.OnShockwaveActivated += HandleShockwaveActivated;
         }
 
         private void UnsubscribeFromEvents()
         {
             CombatEvents.OnOverchargeStateChanged -= HandleOverchargeStateChanged;
+            CombatEvents.OnShockwaveActivated -= HandleShockwaveActivated;
         }
 
         private void FindPlayerReferences()
@@ -141,12 +145,34 @@ namespace CombatSystem.Combat
         {
             // Reset squat state when overcharge changes
             wasSquattingLastFrame = false;
+            
+            if (isOvercharged)
+            {
+                Debug.Log("Shockwave system activated - squat to trigger shockwave!");
+            }
+        }
+
+        private void HandleShockwaveActivated()
+        {
+            // This is called when the PowerMeter triggers a shockwave
+            TriggerShockwave();
         }
 
         private void CheckForShockwaveTrigger()
         {
-            if (powerMeter == null || squatDodge == null || !powerMeter.IsOvercharged) 
+            if (powerMeter == null || squatDodge == null) 
                 return;
+
+            // Check for overcharge state changes
+            bool isOverchargedNow = powerMeter.IsOvercharged;
+            if (isOverchargedNow != wasOverchargedLastFrame)
+            {
+                CombatEvents.OnOverchargeStateChanged?.Invoke(isOverchargedNow);
+            }
+            wasOverchargedLastFrame = isOverchargedNow;
+
+            // Only check for squat triggers during overcharge
+            if (!isOverchargedNow) return;
 
             bool isSquattingNow = squatDodge.IsDodging;
             
@@ -159,31 +185,37 @@ namespace CombatSystem.Combat
             wasSquattingLastFrame = isSquattingNow;
         }
 
+        // Parameterless version for event system
         public void TriggerShockwave()
         {
             if (playerTransform == null) return;
 
             Vector3 shockwaveOrigin = playerTransform.position;
-            
+            TriggerShockwave(shockwaveOrigin, shockwaveRadius, shockwaveDamage);
+        }
+
+        // Overloaded version with parameters for PowerMeter integration
+        public void TriggerShockwave(Vector3 origin, float radius, float damage)
+        {
             // Visual effects
-            StartCoroutine(ShockwaveVisualEffect(shockwaveOrigin));
+            StartCoroutine(ShockwaveVisualEffect(origin, radius));
             
             // Audio effect
             PlayShockwaveAudio();
             
             // Physics effects
-            ApplyShockwavePhysics(shockwaveOrigin);
+            ApplyShockwavePhysics(origin, radius);
             
             // Damage effects
-            DamageEnemiesInRange(shockwaveOrigin);
+            DamageEnemiesInRange(origin, radius, damage);
             
             // Notify other systems
-            CombatEvents.OnShockwaveTriggered?.Invoke(shockwaveOrigin);
+            CombatEvents.OnShockwaveTriggered?.Invoke(origin);
             
-            Debug.Log($"Shockwave triggered at {shockwaveOrigin}");
+            Debug.Log($"Shockwave triggered at {origin} with radius {radius} and damage {damage}");
         }
 
-        private IEnumerator ShockwaveVisualEffect(Vector3 origin)
+        private IEnumerator ShockwaveVisualEffect(Vector3 origin, float radius)
         {
             // Spawn visual ring if available
             GameObject ringInstance = null;
@@ -194,7 +226,7 @@ namespace CombatSystem.Combat
                 
                 // Animate the ring expansion
                 Vector3 startScale = Vector3.zero;
-                Vector3 endScale = Vector3.one * shockwaveRadius * 2f;
+                Vector3 endScale = Vector3.one * radius * 2f;
                 endScale.y = 0.01f; // Keep it flat
                 
                 ringInstance.transform.localScale = startScale;
@@ -247,10 +279,10 @@ namespace CombatSystem.Combat
             }
         }
 
-        private void ApplyShockwavePhysics(Vector3 origin)
+        private void ApplyShockwavePhysics(Vector3 origin, float radius)
         {
             // Find all rigidbodies in range and apply force
-            Collider[] hitColliders = Physics.OverlapSphere(origin, shockwaveRadius, affectedLayers);
+            Collider[] hitColliders = Physics.OverlapSphere(origin, radius, affectedLayers);
             
             foreach (Collider col in hitColliders)
             {
@@ -265,7 +297,7 @@ namespace CombatSystem.Combat
             }
         }
 
-        private void DamageEnemiesInRange(Vector3 origin)
+        private void DamageEnemiesInRange(Vector3 origin, float radius, float damage)
         {
             // Find all drones in range
             var drones = FindObjectsOfType<CombatSystem.Drones.DroneController>();
@@ -275,7 +307,7 @@ namespace CombatSystem.Combat
                 if (drone.IsDestroyed) continue;
                 
                 float distance = Vector3.Distance(origin, drone.transform.position);
-                if (distance <= shockwaveRadius)
+                if (distance <= radius)
                 {
                     // Apply damage based on drone type
                     switch (drone.type)
@@ -287,11 +319,10 @@ namespace CombatSystem.Combat
                             
                         case CombatSystem.Drones.DroneType.Heavy:
                             // Heavy drones are stunned on first hit, destroyed on second
-                            if (drone.state==CombatSystem.Drones.DroneState.Stunned)
+                            if (drone.state == CombatSystem.Drones.DroneState.Stunned)
                             {
                                 drone.DestroyDrone();   
                             }
-                            
                             else
                             {
                                 drone.StunDrone(1.5f);
@@ -306,7 +337,7 @@ namespace CombatSystem.Combat
             foreach (var cube in cubes)
             {
                 float distance = Vector3.Distance(origin, cube.transform.position);
-                if (distance <= shockwaveRadius)
+                if (distance <= radius)
                 {
                     cube.DestroyAndSpawnCoin();
                 }
@@ -324,6 +355,11 @@ namespace CombatSystem.Combat
             knockbackForce = force;
         }
 
+        public void SetShockwaveDamage(float damage)
+        {
+            shockwaveDamage = damage;
+        }
+
         // Debug methods
         [System.Diagnostics.Conditional("UNITY_EDITOR")]
         public void DebugTriggerShockwave()
@@ -337,21 +373,13 @@ namespace CombatSystem.Combat
         void OnDrawGizmosSelected()
         {
             // Draw shockwave radius
-            if (playerTransform != null)
-            {
-                Gizmos.color = shockwaveColor;
-                Gizmos.color = new Color(shockwaveColor.r, shockwaveColor.g, shockwaveColor.b, 0.3f);
-                Gizmos.DrawSphere(playerTransform.position, shockwaveRadius);
-                
-                Gizmos.color = shockwaveColor;
-                Gizmos.DrawWireSphere(playerTransform.position, shockwaveRadius);
-            }
-            else
-            {
-                // Draw at this object's position if no player reference
-                Gizmos.color = Color.yellow;
-                Gizmos.DrawWireSphere(transform.position, shockwaveRadius);
-            }
+            Vector3 center = playerTransform != null ? playerTransform.position : transform.position;
+            
+            Gizmos.color = new Color(shockwaveColor.r, shockwaveColor.g, shockwaveColor.b, 0.3f);
+            Gizmos.DrawSphere(center, shockwaveRadius);
+            
+            Gizmos.color = shockwaveColor;
+            Gizmos.DrawWireSphere(center, shockwaveRadius);
         }
     }
 }

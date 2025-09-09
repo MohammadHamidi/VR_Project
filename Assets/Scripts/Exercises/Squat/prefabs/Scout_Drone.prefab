@@ -9900,6 +9900,7 @@ GameObject:
   m_Component:
   - component: {fileID: 887362518864298721}
   - component: {fileID: 8981711871155592252}
+  - component: {fileID: 4933177071934394975}
   m_Layer: 0
   m_Name: Scout_Drone
   m_TagString: Untagged
@@ -9940,42 +9941,51 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   type: 0
+  despawnAfterFirstAttack: 1
   droneModel: {fileID: 7824893722846446472}
   audioSource: {fileID: 0}
   player: {fileID: 0}
-  heightOffset: 0
+  attackCollider: {fileID: 0}
+  baseHoverHeight: 1.4
   hoverAmplitude: 0.5
   hoverSpeed: 1.2
-  wanderRadius: 3
-  wanderForwardBias: 2.2
-  wanderMoveSpeed: 2.2
-  minWanderDistance: 1.2
-  newWanderTargetCooldown: 1.4
   detectionRange: 8
   aggroBuildPerSecond: 0.6
   aggroDecayPerSecond: 0.8
   telegraphDuration: 0.6
   dashSpeed: 12
-  attackCooldown: 1
-  hitRadius: 1
-  playerHitMask:
+  dashTime: 0.34
+  recoverTime: 0.45
+  initialAggroDelay: 0.5
+  scoutAttackCooldown: 2
+  heavyAttackCooldown: 3
+  globalAttackDelay: 0.5
+  headOffset: {x: 0, y: -0.5, z: 0}
+  maxHP: 1
+  attackDamage: 1
+  attackRadius: 0
+  hoverHeightOffset: 0
+--- !u!135 &4933177071934394975
+SphereCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6962258710318297517}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
-  maxHP: 1
-  stunDuration: 0.6
-  portalEntryWhoosh: {fileID: 0}
-  portalEntryScaleDuration: 0.35
-  portalEntryTravelDistance: 1.2
-  portalEntryTravelDuration: 0.35
-  portalEntryBackwardOffset: 0.2
-  dashSfx: {fileID: 0}
-  hitSfx: {fileID: 0}
-  destroyedSfx: {fileID: 0}
-  state: 0
-  _wanderSpeed_Internal: 1
-  _dashSpeed_Internal: 1
-  _attackCooldown_Internal: 1
-  _telegraphDuration_Internal: 1
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Radius: 0.5
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1001 &7718362855032956003
 PrefabInstance:
   m_ObjectHideFlags: 0

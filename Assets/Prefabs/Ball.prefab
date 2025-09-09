@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 2770015919861748459}
   - component: {fileID: -8241836964892435425}
   - component: {fileID: 7435201009914461441}
+  - component: {fileID: 1743379185870829920}
   m_Layer: 0
   m_Name: Ball
   m_TagString: Throwable
@@ -32,7 +33,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 1.34, z: 0}
-  m_LocalScale: {x: 0.3, y: 0.3, z: 0.3}
+  m_LocalScale: {x: 0.4, y: 0.4, z: 0.4}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 0}
@@ -65,7 +66,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: dfcbc748fb7c24c87bff01b1ea1af6b3, type: 2}
+  - {fileID: 2100000, guid: b14d9bb3782cc47d199f2f4231910280, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -303,3 +304,18 @@ MonoBehaviour:
   hoverAmplitude: 0.1
   hoverDuration: 1
   rotationDuration: 5
+  releaseVelocityMultiplier: 2
+  customGravityStrength: 0
+--- !u!114 &1743379185870829920
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8774105223417190858}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b1817b4e3e034d4c8fe14af1a70f24f1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  spawner: {fileID: 0}

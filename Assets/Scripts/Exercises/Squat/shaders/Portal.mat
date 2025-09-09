@@ -49,14 +49,14 @@ Material:
     - _DistortionSpeed: 1
     - _DistortionStrength: 0.198
     - _DstBlend: 1
-    - _EmissionIntensity: 2.36
+    - _EmissionIntensity: 3
     - _Intensity: 0.28
     - _OpeningDuration: 2
     - _PortalState: 2
     - _PulseIntensity: 0.186
     - _PulseSpeed: 2
     - _RingCount: 10
-    - _RingGlow: 1
+    - _RingGlow: 1.29
     - _RingIntensity: 1
     - _RingRadius: 0.8
     - _RingThickness: 0.5
@@ -64,18 +64,18 @@ Material:
     - _ScrollSpeed: 0.5
     - _ScrollSpeedX: 0.5
     - _ScrollSpeedY: 0.2
-    - _SpawnPointCount: 5
+    - _SpawnPointCount: 4.28
     - _SpawnPointGlow: 2
-    - _SpawnPointSize: 0.03
+    - _SpawnPointSize: 0.0736
     - _SrcBlend: 5
-    - _StateTransition: 0
+    - _StateTransition: 0.055
     - _SwirlSpeed: 1
     - _SwirlStrength: 2
     - _SwirlTightness: 3
     - _ZWrite: 0
     m_Colors:
-    - _Color: {r: 1, g: 0.09760027, b: 0, a: 1}
+    - _Color: {r: 0, g: 0.6511247, b: 1, a: 1}
     - _DissolveEdgeColor: {r: 1, g: 0.5, b: 0, a: 1}
-    - _EmissionColor: {r: 1, g: 0.5917661, b: 0, a: 1}
+    - _EmissionColor: {r: 0.7229991, g: 0, b: 1, a: 1}
     - _SpawnPointColor: {r: 1, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []

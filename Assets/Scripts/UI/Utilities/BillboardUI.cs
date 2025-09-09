@@ -55,8 +55,25 @@ public class BillboardUI : MonoBehaviour
 
     void Start()
     {
-        if (_mainCam == null)
-            return; // nothing to do if we couldn't find a camera
+        // Initial setup - position will be updated in LateUpdate
+        UpdatePosition();
+    }
+
+    void LateUpdate()
+    {
+        if (_isGrabbed || _mainCam == null)
+            return;
+
+        // Update position to maintain viewport anchor
+        UpdatePosition();
+        
+        // Update rotation to face camera
+        UpdateRotation();
+    }
+
+    private void UpdatePosition()
+    {
+        if (_mainCam == null) return;
 
         // Determine horizontal anchor based on enum
         float h = horizontalViewport;
@@ -70,18 +87,10 @@ public class BillboardUI : MonoBehaviour
         // Compute world position from viewport coords
         Vector3 vp = new Vector3(h, verticalViewport, distanceFromCamera);
         transform.position = _mainCam.ViewportToWorldPoint(vp);
-
-        // Initial rotation: camera’s Y rotation + optional tilt
-        float camY = _mainCam.transform.eulerAngles.y;
-        float tilt = enableTilt ? tiltAngleX : 0f;
-        transform.rotation = Quaternion.Euler(tilt, camY, 0);
     }
 
-    void LateUpdate()
+    private void UpdateRotation()
     {
-        if (_isGrabbed || _mainCam == null)
-            return;
-
         // Keep the panel facing the camera horizontally
         Vector3 dir = (_mainCam.transform.position - transform.position).normalized;
         dir.y = 0; // ignore vertical component

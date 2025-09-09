@@ -12,12 +12,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cd0f386c73d743ccb69b3dbf2b07f9f1, type: 3}
   m_Name: Level5
   m_EditorClassIdentifier: 
-  xrRigPrefab: {fileID: 2453629302325982545, guid: a82e3a6cd236c40e2989fbfef31f5299, type: 3}
+  xrRigPrefab: {fileID: 2453629302325982545, guid: 5df03e56c8c5d4b42a119e5480c638ab, type: 3}
   uiControllerPrefab: {fileID: 471150785547529671, guid: b3cff934822ce4d869d852f85de02c28, type: 3}
   environmentPrefabs:
   - {fileID: 1005246215909731498, guid: 95d56d0fed107445b87a3685b245df94, type: 3}
   defaultEnvironmentIndex: 0
   autoGenerateEnvironment: 0
+  generationSeed: 123
+  generationExclusionRadius: 5
+  generationAreaOffsetXZ: 10
+  generationDensity: 0.7
+  primitiveChunkSize: {x: 3, y: 3, z: 3}
+  sizeVariation: 0.5
+  chunkHeightRange: {x: 0, y: 5}
+  generatedPrimitiveTypes:
+  - type: 0
+    prefab: {fileID: 0}
   ballPrefab: {fileID: 8774105223417190858, guid: 66db2c39e6e874b0eae9318cfd6d37dd, type: 3}
   ballSpawnPosition: {x: 0, y: 3, z: 0}
   respawnDelay: 0.4

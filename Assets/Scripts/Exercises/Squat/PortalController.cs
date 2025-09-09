@@ -54,7 +54,7 @@ namespace CombatSystem.Portals
         [SerializeField] private float spawnPointActivationDelay = 0.2f;
 
         [Header("SpawnPoint Visual Scaling")]
-        [SerializeField] private float spOpenScale = 1f;
+        [SerializeField] private float spOpenScale = 2f;
         [SerializeField] private float spScaleUpDuration = 0.35f;
         [SerializeField] private float spScaleDownDuration = 0.30f;
         [SerializeField] private Ease spScaleUpEase = Ease.OutBack;

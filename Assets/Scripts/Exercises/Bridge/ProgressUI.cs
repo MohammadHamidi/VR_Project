@@ -25,6 +25,12 @@ public class ProgressUI : MonoBehaviour
 
     private float targetProgressValue = 0f;
     private Color targetProgressColor = Color.blue;
+    
+    // Balance bar target value (0..1 where 0.5 is centered)
+    private bool hasBalanceTarget = false;
+    private float targetBalanceValue = 0.5f;
+    private Color balanceCenterColor = Color.green;
+    private Color balanceEdgeColor = Color.red;
 
     void Start()
     {
@@ -36,7 +42,8 @@ public class ProgressUI : MonoBehaviour
         // Smooth animation
         if (progressSlider != null)
         {
-            progressSlider.value = Mathf.Lerp(progressSlider.value, targetProgressValue, Time.deltaTime * 5f);
+            float target = hasBalanceTarget ? targetBalanceValue : targetProgressValue;
+            progressSlider.value = Mathf.Lerp(progressSlider.value, target, Time.deltaTime * 5f);
         }
 
         if (progressFill != null)
@@ -82,12 +89,35 @@ public class ProgressUI : MonoBehaviour
     /// </summary>
     public void UpdateProgress(float progress, float distanceTraveled, float remainingDistance, float movementSpeed)
     {
+        hasBalanceTarget = false; // show progress when called
         targetProgressValue = progress;
         targetProgressColor = progressGradient.Evaluate(progress);
 
         UpdateProgressText(progress);
         UpdateDistanceText(distanceTraveled, remainingDistance);
         UpdateSpeedText(movementSpeed);
+    }
+
+    /// <summary>
+    /// Updates the balance bar using signed lateral offset. Center (0) = balanced.
+    /// offsetX is player's local X offset; maxOffsetX is the threshold for failure.
+    /// </summary>
+    public void UpdateBalanceBar(float offsetX, float maxOffsetX)
+    {
+        if (progressSlider == null) return;
+
+        // Normalize to [-1, 1] then map to [0, 1] with center at 0.5
+        float normalized = 0f;
+        if (maxOffsetX > 0.0001f)
+            normalized = Mathf.Clamp(offsetX / maxOffsetX, -1f, 1f);
+
+        float mapped = 0.5f + 0.5f * normalized; // left=0, center=0.5, right=1
+        targetBalanceValue = mapped;
+        hasBalanceTarget = true;
+
+        // Color based on distance from center
+        float distanceFromCenter = Mathf.Abs(normalized);
+        targetProgressColor = Color.Lerp(balanceCenterColor, balanceEdgeColor, distanceFromCenter);
     }
 
     /// <summary>

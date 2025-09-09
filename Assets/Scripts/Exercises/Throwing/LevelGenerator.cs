@@ -134,11 +134,37 @@ public class LevelGenerator : MonoBehaviour
 
         GameObject spawnPointGO = new GameObject("SpawnPoint");
         spawnPointGO.transform.parent = spawnerGO.transform;
-        spawnPointGO.transform.position = levelData.ballSpawnPosition;
+        
+        // Position spawn point in front of player at comfortable grabbing height
+        Vector3 spawnPosition = GetPlayerSpawnPosition();
+        spawnPointGO.transform.position = spawnPosition;
 
         _ballSpawner.spawnPoint = spawnPointGO.transform;
         _ballSpawner.ballPrefab = levelData.ballPrefab;
         _ballSpawner.respawnDelay = levelData.respawnDelay;
+    }
+
+    private Vector3 GetPlayerSpawnPosition()
+    {
+        // Try to find XR Origin and position relative to player
+        var xrOrigin = FindObjectOfType<Unity.XR.CoreUtils.XROrigin>();
+        if (xrOrigin != null && xrOrigin.Camera != null)
+        {
+            Transform playerHead = xrOrigin.Camera.transform;
+            Vector3 playerPosition = playerHead.position;
+            Vector3 playerForward = playerHead.forward;
+            
+            // Position ball in front of player at chest height
+            Vector3 spawnPosition = playerPosition + playerForward * 0.8f; // 0.8m in front
+            spawnPosition.y = playerPosition.y - 0.3f; // Chest height (0.3m below head)
+            
+            Debug.Log($"BallSpawner: Positioned ball spawn at {spawnPosition} relative to player at {playerPosition}");
+            return spawnPosition;
+        }
+        
+        // Fallback to level data position if no XR Origin found
+        Debug.LogWarning("BallSpawner: No XR Origin found, using level data spawn position");
+        return levelData.ballSpawnPosition;
     }
 
     private void GenerateRespawnZone()
@@ -157,6 +183,18 @@ public class LevelGenerator : MonoBehaviour
         }
 
         _respawnZone.spawner = _ballSpawner;
+
+        // Safety: if respawn zone overlaps spawn point, move it below the play area
+        Vector3 spawnPos = levelData.ballSpawnPosition;
+        Vector3 zonePos = zoneGO.transform.position;
+        float horizontalDistance = Vector2.Distance(new Vector2(spawnPos.x, spawnPos.z), new Vector2(zonePos.x, zonePos.z));
+        bool verticallyOverlapping = Mathf.Abs(zonePos.y - spawnPos.y) < 0.5f;
+        if (horizontalDistance < 0.5f && verticallyOverlapping)
+        {
+            zonePos.y = spawnPos.y - 5f;
+            zoneGO.transform.position = zonePos;
+            Debug.LogWarning($"LevelGenerator: Respawn zone overlapped spawn point. Moved to {zonePos}.");
+        }
     }
 
     private List<TargetRing> GenerateRings()

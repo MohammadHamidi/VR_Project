@@ -24,6 +24,16 @@ public class BallSpawner : MonoBehaviour
 
     void Start()
     {
+        if (ballPrefab == null)
+        {
+            Debug.LogError("BallSpawner: ballPrefab is null at Start. Assign it in ThrowingLevelData.");
+            return;
+        }
+        if (spawnPoint == null)
+        {
+            Debug.LogError("BallSpawner: spawnPoint is null at Start. Ensure LevelGenerator created it.");
+            return;
+        }
         SpawnBall();
     }
 

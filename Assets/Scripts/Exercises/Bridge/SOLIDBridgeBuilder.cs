@@ -20,6 +20,7 @@ public class SOLIDBridgeBuilder : MonoBehaviour
 
     private BridgeData currentBridge = new BridgeData();
     private bool bridgeBuilt = false;
+    private bool isBuilding = false;
 
     void Awake()
     {
@@ -57,26 +58,45 @@ public class SOLIDBridgeBuilder : MonoBehaviour
             return;
         }
 
-        ClearExistingBridge();
-
-        var bridgeBuilder = new SimplifiedBridgeConstruction(
-            bridgeConfig, transform, componentFactory, anchorType);
-
-        currentBridge = bridgeBuilder.Build();
-
-        if (ValidateBridge(currentBridge))
+        if (isBuilding)
         {
-            AddBridgeComponents();
-
-            if (bridgeConfig.autoPositionPlayer)
-                TeleportPlayerToStart(); // will also notify tracker
-
-            LogBuildSuccess();
-            bridgeBuilt = true;
+            Debug.Log("Bridge is already being built. Please wait.");
+            return;
         }
-        else
+
+        isBuilding = true;
+
+        try
         {
-            Debug.LogError("Bridge validation failed!");
+            ClearExistingBridge();
+
+            var bridgeBuilder = new SimplifiedBridgeConstruction(
+                bridgeConfig, transform, componentFactory, anchorType);
+
+            currentBridge = bridgeBuilder.Build();
+
+            if (ValidateBridge(currentBridge))
+            {
+                AddBridgeComponents();
+
+                // Only teleport once - the AddBridgeComponents coroutine will handle it
+                if (bridgeConfig.autoPositionPlayer)
+                {
+                    // Use coroutine for better timing instead of immediate teleport
+                    StartCoroutine(PositionPlayerAfterPhysicsSettle());
+                }
+
+                LogBuildSuccess();
+                bridgeBuilt = true;
+            }
+            else
+            {
+                Debug.LogError("Bridge validation failed!");
+            }
+        }
+        finally
+        {
+            isBuilding = false;
         }
     }
 
@@ -284,9 +304,7 @@ public class SOLIDBridgeBuilder : MonoBehaviour
 
         CreateBridgeGoal();
     
-        // Use coroutine for better timing
-        if (bridgeConfig.autoPositionPlayer)
-            StartCoroutine(PositionPlayerAfterPhysicsSettle());
+        // Don't teleport here - let BuildBridge() handle it to avoid duplicate calls
     }
 
     private void CreateBridgeGoal()

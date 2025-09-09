@@ -62,7 +62,7 @@ namespace CombatSystem.Spawning
 
         [Header("Waves")]
         [SerializeField] private List<WaveConfiguration> waves = new List<WaveConfiguration>();
-        [SerializeField] private bool autoStart = true; // NEW: auto-start waves at Start
+        [SerializeField] public bool autoStart = true; // NEW: auto-start waves at Start
 
         // ===== Runtime =====
         private readonly List<DroneController> activeDrones = new List<DroneController>();
@@ -197,6 +197,7 @@ namespace CombatSystem.Spawning
         }
 
 
+// Fixed SpawnRandomDrone method for DroneSpawner.cs
 private IEnumerator SpawnRandomDrone(WaveConfiguration config, bool forcePortal = false)
 {
     DroneController prefab = (Random.value <= config.scoutProbability) ? scoutPrefab : heavyPrefab;
@@ -225,58 +226,70 @@ private IEnumerator SpawnRandomDrone(WaveConfiguration config, bool forcePortal 
         }
         else
         {
+            // Fallback to any portal point if none are active
             portalIndex = Random.Range(0, portalController.SpawnPoints.Length);
             portalPoint = portalController.SpawnPoints[portalIndex].transform;
             spawnPos = portalPoint.position;
-            usePortal = true;
         }
 
-        // For portal spawns, ignore distance checks - spawn at exact portal position
-        Debug.Log($"Portal spawn at: {spawnPos} (portal index: {portalIndex})");
+        Debug.Log($"Portal spawn selected: {spawnPos} (portal index: {portalIndex})");
     }
     else
     {
         spawnPos = GetFallbackSpawnPosition();
         usePortal = false;
         
-        // Only check distance for fallback spawns
+        // Check distance for fallback spawns
         if (!IsFarEnoughFromOthers(spawnPos, minDistanceBetweenDrones))
         {
             spawnPos = GetFallbackSpawnPosition();
         }
+        Debug.Log($"Fallback spawn selected: {spawnPos}");
     }
 
+    // ✅ Create drone and ensure proper setup
     DroneController drone = GetFromPool(prefab);
+    
+    // ✅ Set position BEFORE calling OnSpawned so it can store spawn position
     drone.transform.position = spawnPos;
-
-    if (drone.player == null && playerTransform != null)
+    
+    // ✅ Ensure player reference is set BEFORE OnSpawned
+    if (playerTransform != null)
         drone.player = playerTransform;
 
-    // Initial direction
-    Vector3 lookAt = (portalPoint != null ? portalPoint.position + portalPoint.forward : spawnPos + Vector3.forward);
-    Vector3 dir = (lookAt - spawnPos); dir.y = 0f;
-    if (dir.sqrMagnitude > 0.0001f)
-        drone.transform.rotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
+    // ✅ Set initial direction (optional, drone will face player anyway)
+    if (playerTransform != null)
+    {
+        Vector3 dirToPlayer = (playerTransform.position - spawnPos);
+        dirToPlayer.y = 0f;
+        if (dirToPlayer.sqrMagnitude > 0.0001f)
+            drone.transform.rotation = Quaternion.LookRotation(dirToPlayer.normalized, Vector3.up);
+    }
 
+    // ✅ Initialize drone (this will store the spawn position and setup head target)
     drone.OnSpawned();
 
+    // ✅ Apply difficulty settings
     ApplyWaveDifficulty(drone, config);
 
+    // ✅ Add to active list and fire events
     activeDrones.Add(drone);
-    CombatEvents.OnDroneSpawned?.Invoke(drone);
+    CombatEvents.OnDroneSpawned?.Invoke(1);
     CombatEvents.OnActiveDronesCountChanged?.Invoke(activeDrones.Count);
 
+    // ✅ Handle portal entry animation AFTER drone is fully set up
     if (usePortal && portalIndex >= 0 && portalPoint != null)
     {
         portalController.TriggerSpawnEffect(portalIndex);
         drone.PlayPortalEntry(portalPoint);
-        Debug.Log($"Playing portal entry for drone at: {drone.transform.position}");
+        Debug.Log($"Portal entry triggered for drone at: {drone.transform.position}");
     }
     else
     {
-        Debug.Log($"Fallback spawn for drone at: {drone.transform.position}");
+        Debug.Log($"Fallback spawn completed for drone at: {drone.transform.position}");
     }
 
+    // ✅ Setup destruction callback
     System.Action<DroneController> onDestroyed = null;
     onDestroyed = (d) =>
     {
@@ -290,8 +303,7 @@ private IEnumerator SpawnRandomDrone(WaveConfiguration config, bool forcePortal 
     CombatEvents.OnDroneDestroyed += onDestroyed;
 
     yield return null;
-}
-        // ================== Positions ==================
+}        // ================== Positions ==================
         private Vector3 GetFallbackSpawnPosition()
         {
             if (fallbackSpawns != null && fallbackSpawns.Length > 0)

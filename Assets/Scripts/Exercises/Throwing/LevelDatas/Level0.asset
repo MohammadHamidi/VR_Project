@@ -31,7 +31,7 @@ MonoBehaviour:
   respawnDelay: 1
   respawnZonePrefab: {fileID: 111596060587745638, guid: 01c12db87ce9d413dba8193dea9b3740, type: 3}
   respawnZonePosition: {x: 0, y: 0, z: 0}
-  ringPrefab: {fileID: 9164512224790044594, guid: b34b66dc0179241f0b2f9146ea16868c, type: 3}
+  ringPrefab: {fileID: 6370469010398321096, guid: 35dceb0594e2b40d985c403a08911c13, type: 3}
   ringPositions:
   - {x: 0, y: 2, z: 10}
   - {x: 0, y: 3, z: 10}

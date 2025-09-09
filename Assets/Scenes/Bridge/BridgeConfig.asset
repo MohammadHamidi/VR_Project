@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: BridgeConfig
   m_EditorClassIdentifier: 
   plankCount: 20
-  bridgeLength: 5.08
+  bridgeLength: 12
   plankWidth: 1
   plankThickness: 0.05
   plankGap: 0.02

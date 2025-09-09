@@ -1,4 +1,4 @@
-// CombatSystem/Drones/DroneController.cs
+// ... (usings و namespace و enumها و interface بدون تغییر)
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -17,21 +17,18 @@ namespace CombatSystem.Drones
         void OnDespawned();
     }
 
-    /// <summary>
-    /// Drone behavior with direct aggro (no wandering) + head targeting for VR dodging.
-    /// </summary>
     public class DroneController : MonoBehaviour, IPoolable
     {
         [Header("Identity")]
         public DroneType type = DroneType.Scout;
-        [SerializeField] private bool despawnAfterFirstAttack = true;    // Return to pool after first dash
-        private Vector3 homePosition;                                    // Spawn location (for reference)
+        [SerializeField] private bool despawnAfterFirstAttack = true;
+        private Vector3 homePosition;
         public void SetHome(Vector3 pos) => homePosition = pos;
 
         [Header("References")]
-        [SerializeField] private Transform droneModel;    // Visual body
-        [SerializeField] private AudioSource audioSource; // Created in Awake if missing
-        [SerializeField] public Transform player;        // Player target (will be set to head)
+        [SerializeField] private Transform droneModel;
+        [SerializeField] public Transform player;
+        [SerializeField] private SphereCollider attackCollider;
 
         [Header("Hover")]
         [SerializeField] private float baseHoverHeight = 1.4f;
@@ -39,20 +36,31 @@ namespace CombatSystem.Drones
         [SerializeField] private float hoverSpeed = 1.2f;
 
         [Header("Aggro / Attack")]
-        [SerializeField] private float detectionRange = 5.0f;
-        [SerializeField] private float aggroBuildPerSecond = 1.5f;      // Faster aggro build
-        [SerializeField] private float aggroDecayPerSecond = 0.8f;
+        [SerializeField] private float detectionRange = 8.0f; // Increased from 5.0f for better detection
+        [SerializeField] private float aggroBuildPerSecond = 2.0f; // Increased from 1.5f for faster aggro
+        [SerializeField] private float aggroDecayPerSecond = 0.5f; // Decreased from 0.8f for slower decay
         [SerializeField] private float telegraphDuration = 0.45f;
-        [SerializeField] private float dashSpeed = 7.5f;
+        [SerializeField] private float dashSpeed = 7.5f; 
         [SerializeField] private float dashTime = 0.34f;
         [SerializeField] private float recoverTime = 0.45f;
-        [SerializeField] private float initialAggroDelay = 0.5f;        // Brief delay before starting aggro
+        [SerializeField] private float initialAggroDelay = 0.2f; // Reduced from 0.5f for faster response
+
+        [Header("Attack Cooldowns")]
+        [SerializeField] private float scoutAttackCooldown = 2.0f;
+        [SerializeField] private float heavyAttackCooldown = 3.0f;
+        [SerializeField] private float globalAttackDelay = 0.2f; // Reduced from 0.5f for faster attack availability
 
         [Header("Head Targeting")]
-        [SerializeField] private Vector3 headOffset = Vector3.zero;     // Additional offset for head targeting
+        [SerializeField] private Vector3 headOffset = new Vector3(0f, -0.05f, 0f); // ↓ کمی پایین‌تر از چشم
 
         [Header("HP")]
         [SerializeField] private float maxHP = 10f;
+
+        [Header("Attack Damage")]
+        [SerializeField] private float attackDamage = 1f;
+
+        [SerializeField, Tooltip("0.15–0.25 recommended")]
+        private float attackRadius = 0.20f; // ↓ کوچکتر شده
 
         // ======= Internal state =======
         public DroneState state { get; private set; } = DroneState.Idle;
@@ -61,7 +69,10 @@ namespace CombatSystem.Drones
         private float hp;
         private float aggroValue;
         private float spawnTime;
-        private Transform headTarget; // The actual head/camera transform
+        private Transform headTarget;
+        private bool hasDealtDamage = false;
+        private float lastAttackTime = -1f;
+        private bool canAttack = true;
 
         // ======= Tweens =======
         private Tween hoverTween;
@@ -71,26 +82,42 @@ namespace CombatSystem.Drones
         // ======= Pooling =======
         private System.Action<IPoolable> _returnToPool;
 
-        // ======= Difficulty multipliers (set via reflection by spawner) =======
+        // ======= Difficulty multipliers =======
         private float _dashSpeed_Internal = 1f;
         private float _attackCooldown_Internal = 1f;
         private float _telegraphDuration_Internal = 1f;
+        private float _wanderSpeed_Internal = 1f; // Added missing field
+        [SerializeField] private float hoverHeightOffset = 0;
+
+        // ↓ بافر خیلی کم
+        private const float DistanceFudge = 0.01f;
 
         private void Awake()
         {
-            if (audioSource == null)
-            {
-                audioSource = gameObject.GetComponent<AudioSource>();
-                if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
-                audioSource.playOnAwake = false;
-                audioSource.spatialBlend = 1f;
-            }
+            // if (audioSource == null)
+            // {
+            //     audioSource = gameObject.GetComponent<AudioSource>() ?? gameObject.AddComponent<AudioSource>();
+            //     audioSource.playOnAwake = false;
+            //     audioSource.spatialBlend = 1f;
+            // }
+
+            if (attackCollider == null)
+                attackCollider = gameObject.GetComponent<SphereCollider>() ?? gameObject.AddComponent<SphereCollider>();
+
+            attackCollider.isTrigger = true;
+            attackCollider.radius = attackRadius;
+            attackCollider.center = Vector3.zero; // ✅ فیکس 1: مرکز جلو نباشد
+            attackCollider.enabled = false;
+
+            Debug.Log($"{gameObject.name}: Attack collider setup - radius:{attackCollider.radius}, center:{attackCollider.center}");
         }
 
         private void OnEnable()
         {
             inPortalEntry = false;
             hoverEnabled = true;
+            hasDealtDamage = false;
+            canAttack = false;
             KillAllTweens();
             StartHoverAnimation();
         }
@@ -98,6 +125,7 @@ namespace CombatSystem.Drones
         private void OnDisable()
         {
             KillAllTweens();
+            if (attackCollider != null) attackCollider.enabled = false;
         }
 
         public void SetPool(System.Action<IPoolable> returnToPool) => _returnToPool = returnToPool;
@@ -105,16 +133,25 @@ namespace CombatSystem.Drones
         public void OnSpawned()
         {
             hp = maxHP;
-            state = DroneState.Idle; // Start idle, will quickly become aggressive
+            state = DroneState.Idle;
             aggroValue = 0f;
             inPortalEntry = false;
             hoverEnabled = true;
             spawnTime = Time.time;
+            hasDealtDamage = false;
+            lastAttackTime = -1f;
+            canAttack = false;
 
             homePosition = transform.position;
-
-            // Find and set head target for VR
             SetupHeadTarget();
+
+            if (headTarget != null)
+            {
+                var pos = transform.position;
+                pos.y = headTarget.position.y + hoverHeightOffset;
+                transform.position = pos;
+                baseHoverHeight = pos.y; // ✅ سنتر هاور هم‌تراز با سر
+            }
 
             if (droneModel != null)
             {
@@ -122,51 +159,79 @@ namespace CombatSystem.Drones
                 droneModel.localScale = Vector3.one;
             }
 
-            Debug.Log($"{gameObject.name} spawned, targeting head at: {(headTarget != null ? headTarget.name : "null")}");
+            if (attackCollider != null) attackCollider.enabled = false;
+
+            DOVirtual.DelayedCall(globalAttackDelay, () => {
+                canAttack = true;
+                Debug.Log($"{gameObject.name}: Can attack now! (after {globalAttackDelay}s delay)");
+            });
+
+            Debug.Log($"{gameObject.name} spawned at y={transform.position.y:F2}, head={(headTarget != null ? headTarget.name : "null")}, detectionRange={detectionRange}");
         }
 
         private void SetupHeadTarget()
         {
-            // Try to find the VR head/camera
-            if (player != null)
+            if (player != null && player.GetComponent<Camera>() != null)
             {
-                // If player is already the camera, use it directly
-                var camera = player.GetComponent<Camera>();
-                if (camera != null)
-                {
-                    headTarget = player;
-                    return;
-                }
+                headTarget = player; 
+                EnsurePlayerHasCollider(player.gameObject); 
+                Debug.Log($"{gameObject.name}: Using assigned player camera: {player.name}");
+                return;
             }
 
-            // Look for XR Origin and get the camera
             var xrOrigin = FindObjectOfType<Unity.XR.CoreUtils.XROrigin>();
             if (xrOrigin != null && xrOrigin.Camera != null)
             {
-                headTarget = xrOrigin.Camera.transform;
-                player = headTarget; // Set player reference to head for compatibility
-                Debug.Log($"Found XR head target: {headTarget.name}");
+                headTarget = xrOrigin.Camera.transform; 
+                player = headTarget;
+                EnsurePlayerHasCollider(xrOrigin.Camera.gameObject); 
+                Debug.Log($"{gameObject.name}: Found XR Origin camera: {headTarget.name}");
                 return;
             }
 
-            // Fallback to main camera
             if (Camera.main != null)
             {
-                headTarget = Camera.main.transform;
+                headTarget = Camera.main.transform; 
                 player = headTarget;
-                Debug.Log($"Using main camera as head target: {headTarget.name}");
+                EnsurePlayerHasCollider(Camera.main.gameObject); 
+                Debug.Log($"{gameObject.name}: Using Camera.main: {headTarget.name}");
                 return;
             }
 
-            // Last resort - use existing player reference
             headTarget = player;
-            Debug.LogWarning("Could not find specific head target, using player reference");
+            if (player != null) 
+            {
+                EnsurePlayerHasCollider(player.gameObject);
+                Debug.Log($"{gameObject.name}: Using fallback player: {player.name}");
+            }
+            else
+            {
+                Debug.LogError($"{gameObject.name}: No player target found! Drone will not attack.");
+            }
+        }
+
+        private void EnsurePlayerHasCollider(GameObject playerObj)
+        {
+            if (playerObj == null) return;
+
+            var xrOrigin = playerObj.GetComponentInParent<Unity.XR.CoreUtils.XROrigin>();
+            if (xrOrigin != null) { Debug.Log($"{gameObject.name}: VR camera detected"); return; }
+
+            var existing = playerObj.GetComponents<Collider>();
+            bool ok = false; foreach (var c in existing) if (c.enabled && !c.isTrigger) { ok = true; break; }
+
+            if (!ok)
+            {
+                var sc = playerObj.GetComponent<SphereCollider>() ?? playerObj.AddComponent<SphereCollider>();
+                sc.isTrigger = false; sc.radius = 0.1f; sc.center = Vector3.zero;
+            }
         }
 
         public void OnDespawned()
         {
             KillAllTweens();
             if (droneModel != null) droneModel.gameObject.SetActive(false);
+            if (attackCollider != null) attackCollider.enabled = false;
             state = DroneState.Destroyed;
         }
 
@@ -176,16 +241,53 @@ namespace CombatSystem.Drones
 
             switch (state)
             {
-                case DroneState.Idle:
-                    TickIdleToAggressive();
-                    break;
-
-                case DroneState.Aggressive:
-                    TryStartAttack();
-                    break;
-
-                // other states are timer/coroutine-driven
+                case DroneState.Idle:       TickIdleToAggressive(); break;
+                case DroneState.Aggressive: TryStartAttack(); break;
             }
+        }
+
+        private void OnTriggerEnter(Collider other)
+        {
+            if ((state == DroneState.Dashing || state == DroneState.Recovering) && !hasDealtDamage && !IsDestroyed)
+            {
+                if (IsPlayerCollider(other)) { DealDamageToPlayer(); hasDealtDamage = true; }
+            }
+        }
+
+        private void OnTriggerStay(Collider other)
+        {
+            if ((state == DroneState.Dashing || state == DroneState.Recovering) && !hasDealtDamage && !IsDestroyed)
+            {
+                if (IsPlayerCollider(other)) { DealDamageToPlayer(); hasDealtDamage = true; }
+            }
+        }
+
+        private bool IsPlayerCollider(Collider other)
+        {
+            if (other.transform == headTarget) return true;
+            if (other.GetComponent<Camera>() != null) return true;
+            if (other.name.ToLower().Contains("controller")) return true;
+            if (other.CompareTag("Player")) return true;
+            return false;
+        }
+
+        private void DealDamageToPlayer()
+        {
+            CombatEvents.OnPlayerTakeDamage?.Invoke(attackDamage);
+        }
+
+        private void CheckDistanceBasedCollision()
+        {
+            if (headTarget == null || hasDealtDamage) return;
+
+            // ✅ فیکس 2: همیشه از موقعیت مدل به‌عنوان مبدأ فاصله استفاده کن
+            Vector3 origin = (droneModel != null) ? droneModel.position : transform.position;
+
+            float dist   = Vector3.Distance(origin, GetHeadPosition());
+            float radius = (attackCollider != null) ? attackCollider.radius : attackRadius;
+            float hit    = radius + DistanceFudge; // ✅ فیکس 3: بافر کوچک
+
+            if (dist <= hit) { DealDamageToPlayer(); hasDealtDamage = true; }
         }
 
         // ================== Hover ==================
@@ -193,22 +295,16 @@ namespace CombatSystem.Drones
         {
             KillHover();
 
-            // Set initial Y
-            var p = transform.position;
-            p.y = baseHoverHeight;
-            transform.position = p;
+            var p = transform.position; p.y = baseHoverHeight; transform.position = p;
 
             hoverTween = DOVirtual.Float(0f, 1f, 1f, _ =>
             {
                 if (!hoverEnabled) return;
                 float t = Time.time * hoverSpeed;
                 float y = baseHoverHeight + Mathf.Sin(t) * hoverAmplitude;
-                var pos = transform.position;
-                pos.y = y;
-                transform.position = pos;
+                var pos = transform.position; pos.y = y; transform.position = pos;
             })
-            .SetLoops(-1)
-            .SetUpdate(UpdateType.Normal, true);
+            .SetLoops(-1).SetUpdate(UpdateType.Normal, true);
         }
 
         private void KillHover()
@@ -217,29 +313,34 @@ namespace CombatSystem.Drones
             hoverTween = null;
         }
 
-        // ================== Direct Aggro (No Wandering) ==================
         private void TickIdleToAggressive()
         {
-            if (headTarget == null) return;
+            if (headTarget == null) 
+            {
+                Debug.LogWarning($"{gameObject.name}: No head target found!");
+                return;
+            }
 
-            // Brief delay after spawn before becoming aggressive
             float timeSinceSpawn = Time.time - spawnTime;
             if (timeSinceSpawn < initialAggroDelay) return;
 
             float dist = Vector3.Distance(transform.position, GetHeadPosition());
-            float delta = (dist <= detectionRange)
-                ? (aggroBuildPerSecond * Time.deltaTime)
-                : (-aggroDecayPerSecond * Time.deltaTime);
+            float delta = (dist <= detectionRange) ? (aggroBuildPerSecond * Time.deltaTime)
+                                                   : (-aggroDecayPerSecond * Time.deltaTime);
 
             aggroValue = Mathf.Clamp01(aggroValue + delta);
-
-            // Face the target while building aggro
             FaceTowards(GetHeadPosition());
 
-            if (aggroValue >= 1f)
+            // Debug logging for aggro system
+            if (Time.frameCount % 60 == 0) // Log every 60 frames (about once per second)
             {
+                Debug.Log($"{gameObject.name}: Dist={dist:F2}, DetectionRange={detectionRange}, Aggro={aggroValue:F2}, State={state}");
+            }
+
+            if (aggroValue >= 1f) 
+            {
+                Debug.Log($"{gameObject.name}: Transitioning to Aggressive state!");
                 state = DroneState.Aggressive;
-                Debug.Log($"{gameObject.name} became aggressive, targeting head position");
             }
         }
 
@@ -251,22 +352,42 @@ namespace CombatSystem.Drones
 
         private void FaceTowards(Vector3 target)
         {
-            Vector3 dir = (target - transform.position);
-            dir.y = 0f;
+            Vector3 dir = (target - transform.position); dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f) return;
-
             Quaternion desired = Quaternion.LookRotation(dir.normalized, Vector3.up);
-            transform.rotation = Quaternion.Slerp(
-                transform.rotation,
-                desired,
-                1f - Mathf.Exp(-8f * Time.deltaTime)
-            );
+            transform.rotation = Quaternion.Slerp(transform.rotation, desired, 1f - Mathf.Exp(-8f * Time.deltaTime));
         }
 
-        // ================== Attack ==================
+        // ================== Attack with Cooldowns ==================
         private void TryStartAttack()
         {
-            if (headTarget == null || state != DroneState.Aggressive) return;
+            if (headTarget == null) 
+            {
+                Debug.LogWarning($"{gameObject.name}: Cannot attack - no head target!");
+                return;
+            }
+            if (state != DroneState.Aggressive) 
+            {
+                Debug.LogWarning($"{gameObject.name}: Cannot attack - not in Aggressive state (current: {state})");
+                return;
+            }
+            if (!canAttack) 
+            {
+                Debug.LogWarning($"{gameObject.name}: Cannot attack - canAttack is false");
+                return;
+            }
+
+            float cooldown = (type == DroneType.Scout) ? scoutAttackCooldown : heavyAttackCooldown;
+            cooldown *= _attackCooldown_Internal;
+
+            if (lastAttackTime >= 0 && Time.time - lastAttackTime < cooldown) 
+            {
+                Debug.Log($"{gameObject.name}: Attack on cooldown. Time left: {cooldown - (Time.time - lastAttackTime):F2}s");
+                return;
+            }
+
+            Debug.Log($"{gameObject.name}: Starting attack sequence!");
+            lastAttackTime = Time.time;
             StopAllCoroutines();
             StartCoroutine(AttackDashSequence());
         }
@@ -274,136 +395,87 @@ namespace CombatSystem.Drones
         private IEnumerator AttackDashSequence()
         {
             state = DroneState.Telegraphing;
+            hasDealtDamage = false;
 
             float tele = telegraphDuration * _telegraphDuration_Internal;
             float t = 0f;
-            
-            // Telegraph while continuously tracking head
-            while (t < tele)
-            {
-                t += Time.deltaTime;
-                FaceTowards(GetHeadPosition());
-                yield return null;
-            }
+            while (t < tele) { t += Time.deltaTime; FaceTowards(GetHeadPosition()); yield return null; }
 
             state = DroneState.Dashing;
             hoverEnabled = false;
 
-            Vector3 startPos = transform.position;
-            Vector3 headPos = GetHeadPosition();
-            Vector3 dir = (headPos - startPos).normalized;
+            if (attackCollider != null) attackCollider.enabled = true;
 
-            Vector3 dashTarget = startPos + dir * (dashSpeed * _dashSpeed_Internal * dashTime);
+            Vector3 startPos = transform.position;
+            Vector3 dashTarget = GetHeadPosition(); // هدف لحظه‌ی شروع
+
             float elapsed = 0f;
-            
-            // Dash toward the head position
             while (elapsed < dashTime)
             {
                 elapsed += Time.deltaTime;
-                float a = Mathf.Clamp01(elapsed / dashTime);
-                transform.position = Vector3.Lerp(startPos, dashTarget, a);
-                
-                // Keep facing the target during dash
-                FaceTowards(headPos);
+                float k = Mathf.Clamp01(elapsed / dashTime);
+                transform.position = Vector3.Lerp(startPos, dashTarget, k);
+
+                FaceTowards(GetHeadPosition());
+                CheckDistanceBasedCollision(); // دَمج جدا از حرکت
                 yield return null;
             }
 
-            // Despawn immediately after attack
-            if (despawnAfterFirstAttack)
+            // ✅ فیکس 4: در پایان دَش دقیقاً روی dashTarget قرار بگیر
+            transform.position = dashTarget;
+            CheckDistanceBasedCollision();
+
+            // پنجره‌ی کوتاه برای ثبت برخورد (بدون تلپورت دنبال کردن سر)
+            float endWindow = 0.12f;
+            float until = Time.time + endWindow;
+            while (!hasDealtDamage && Time.time < until)
             {
-                yield return new WaitForSeconds(0.05f);
+                CheckDistanceBasedCollision();
+                yield return new WaitForFixedUpdate();
+            }
+
+            if (attackCollider != null) attackCollider.enabled = false;
+
+            if (despawnAfterFirstAttack || type == DroneType.Scout)
+            {
+                yield return new WaitForSeconds(0.2f);
                 DespawnNow();
                 yield break;
             }
 
-            // Recovery phase (if not despawning)
             state = DroneState.Recovering;
             hoverEnabled = true;
-            yield return new WaitForSeconds(recoverTime / Mathf.Max(0.2f, _attackCooldown_Internal));
+            yield return new WaitForSeconds(recoverTime);
             state = DroneState.Idle;
             aggroValue = Mathf.Clamp01(aggroValue - 0.35f);
         }
 
-        // ================== Portal Entry ==================
+        // ================== Portal Entry / Utils / Damage / Destroy (بدون تغییر معنادار) ==================
         public void PlayPortalEntry(Transform portalPoint, float travelTime = 0.45f, float scaleTime = 0.25f)
         {
-            if (portalPoint == null) 
-            {
-                Debug.LogWarning($"{gameObject.name}: PlayPortalEntry called with null portalPoint");
-                return;
-            }
-
-            StopAllCoroutines();
-            KillAllTweens();
-
-            inPortalEntry = true;
-            hoverEnabled = false;
-
-            // Ensure drone is positioned exactly at portal point
-            Vector3 portalPos = portalPoint.position;
-            transform.position = portalPos;
-            
-            Debug.Log($"{gameObject.name} starting portal entry at position: {portalPos}");
-
-            if (droneModel != null)
-                droneModel.localScale = Vector3.zero;
-
+            if (portalPoint == null) { Debug.LogWarning($"{gameObject.name}: PlayPortalEntry called with null portalPoint"); return; }
+            StopAllCoroutines(); KillAllTweens();
+            inPortalEntry = true; hoverEnabled = false;
+            transform.position = portalPoint.position;
+            if (droneModel != null) droneModel.localScale = Vector3.zero;
             Sequence seq = DOTween.Sequence();
-            // Only scale animation, no movement - drone stays at portal position
-            if (droneModel != null)
-                seq.Append(droneModel.DOScale(Vector3.one, scaleTime).SetEase(Ease.OutBack));
-            else
-                seq.AppendInterval(scaleTime); // If no model, just wait
-
-            seq.OnComplete(() =>
-            {
-                inPortalEntry = false;
-                hoverEnabled = true;
-                StartHoverAnimation();
-                state = DroneState.Idle; // Start idle, will become aggressive quickly
-                Debug.Log($"{gameObject.name} portal entry complete. Final position: {transform.position}");
-            });
+            if (droneModel != null) seq.Append(droneModel.DOScale(Vector3.one, scaleTime).SetEase(Ease.OutBack));
+            else seq.AppendInterval(scaleTime);
+            seq.OnComplete(() => { inPortalEntry = false; hoverEnabled = true; StartHoverAnimation(); state = DroneState.Idle; });
         }
 
-        // ================== Utils ==================
-        private void KillAllTweens()
-        {
-            if (hoverTween != null && hoverTween.IsActive()) hoverTween.Kill();
-            hoverTween = null;
-        }
-
-        public void StunDrone(float duration)
-        {
-            if (IsDestroyed) return;
-            StopAllCoroutines();
-            state = DroneState.Stunned;
-            DOVirtual.DelayedCall(duration, () =>
-            {
-                if (!IsDestroyed) state = DroneState.Idle;
-            });
-        }
-
-        public void ApplyDamage(float amount)
-        {
-            if (IsDestroyed) return;
-            hp -= Mathf.Abs(amount);
-            if (hp <= 0f)
-            {
-                state = DroneState.Destroyed;
-                _returnToPool?.Invoke(this);
-            }
-        }
-
+        private void KillAllTweens() { if (hoverTween != null && hoverTween.IsActive()) hoverTween.Kill(); hoverTween = null; }
+        public void StunDrone(float duration){ if (IsDestroyed) return; StopAllCoroutines(); state = DroneState.Stunned; DOVirtual.DelayedCall(duration, ()=>{ if (!IsDestroyed) state = DroneState.Idle; }); }
+        public void ApplyDamage(float amount){ if (IsDestroyed) return; hp -= Mathf.Abs(amount); if (hp <= 0f){ CombatEvents.OnDroneDestroyed?.Invoke(this); state = DroneState.Destroyed; _returnToPool?.Invoke(this);} }
         public void DespawnNow() => _returnToPool?.Invoke(this);
+        public void DestroyDrone(){ if (IsDestroyed) return; CombatEvents.OnDroneDestroyed?.Invoke(this); state = DroneState.Destroyed; _returnToPool?.Invoke(this); }
 
-        /// <summary>
-        /// Backward-compat: some scripts call DestroyDrone(). This will despawn the drone.
-        /// </summary>
-        public void DestroyDrone()
+        public bool CanAttackNow()
         {
-            if (IsDestroyed) return;
-            state = DroneState.Destroyed;
-            _returnToPool?.Invoke(this);
+            if (!canAttack) return false;
+            float cd = (type == DroneType.Scout) ? scoutAttackCooldown : heavyAttackCooldown;
+            cd *= _attackCooldown_Internal;
+            return lastAttackTime < 0 || Time.time - lastAttackTime >= cd;
         }
     }
 }

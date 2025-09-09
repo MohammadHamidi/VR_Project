@@ -1,0 +1,76 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 0}
+  m_Name: EasyWaveSet
+  m_EditorClassIdentifier: Assembly-CSharp:CombatSystem.Spawning.Editor:WaveSetAsset
+  difficulty: 1
+  waves:
+  - waveNumber: 1
+    waveDuration: 21.221758
+    restDuration: 13.925908
+    maxSimultaneousDrones: 2
+    spawnInterval: 2.1675727
+    spawnVariation: 0.5
+    scoutProbability: 0.8
+    heavyProbability: 0.2
+    droneSpeedMultiplier: 0.99853134
+    attackCooldownMultiplier: 1
+    telegraphDurationMultiplier: 1
+    dashSpeedMultiplier: 1
+  - waveNumber: 2
+    waveDuration: 24.425179
+    restDuration: 12.069029
+    maxSimultaneousDrones: 3
+    spawnInterval: 2.2289984
+    spawnVariation: 0.5
+    scoutProbability: 0.75
+    heavyProbability: 0.25
+    droneSpeedMultiplier: 1.1447797
+    attackCooldownMultiplier: 0.9090909
+    telegraphDurationMultiplier: 0.9090909
+    dashSpeedMultiplier: 1.1
+  - waveNumber: 3
+    waveDuration: 22.159864
+    restDuration: 7.1135955
+    maxSimultaneousDrones: 5
+    spawnInterval: 1.6928895
+    spawnVariation: 0.5
+    scoutProbability: 0.7
+    heavyProbability: 0.3
+    droneSpeedMultiplier: 1.1585436
+    attackCooldownMultiplier: 0.8333333
+    telegraphDurationMultiplier: 0.8333333
+    dashSpeedMultiplier: 1.2
+  - waveNumber: 4
+    waveDuration: 28.326252
+    restDuration: 9.1414175
+    maxSimultaneousDrones: 3
+    spawnInterval: 1.7979666
+    spawnVariation: 0.5
+    scoutProbability: 0.65000004
+    heavyProbability: 0.34999996
+    droneSpeedMultiplier: 1.2754344
+    attackCooldownMultiplier: 0.7692308
+    telegraphDurationMultiplier: 0.7692308
+    dashSpeedMultiplier: 1.3
+  - waveNumber: 5
+    waveDuration: 27.063934
+    restDuration: 5.9390097
+    maxSimultaneousDrones: 3
+    spawnInterval: 2.2883883
+    spawnVariation: 0.5
+    scoutProbability: 0.6
+    heavyProbability: 0.39999998
+    droneSpeedMultiplier: 1.4365137
+    attackCooldownMultiplier: 0.71428573
+    telegraphDurationMultiplier: 0.71428573
+    dashSpeedMultiplier: 1.4

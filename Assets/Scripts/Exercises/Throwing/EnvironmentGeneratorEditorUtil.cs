@@ -1,4 +1,4 @@
-﻿// Assets/Editor/EnvironmentGeneratorEditorUtil.cs
+﻿#if UNITY_EDITOR// Assets/Editor/EnvironmentGeneratorEditorUtil.cs
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
@@ -450,3 +450,4 @@ public static class EnvironmentGeneratorEditorUtil
         }
     }
 }
+#endif

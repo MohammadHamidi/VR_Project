@@ -1,7 +1,7 @@
-using System.Collections;
 using UnityEngine;
+using UnityEngine.UI;
 using CombatSystem.Events;
-using DG.Tweening;
+using System.Collections;
 
 namespace CombatSystem.Combat
 {
@@ -9,311 +9,349 @@ namespace CombatSystem.Combat
     {
         [Header("Power Settings")]
         [SerializeField] private float maxPower = 100f;
-        [SerializeField] private float decayPerSecond = 2f;
-        [SerializeField] private float perfectSquatPower = 12f;
-        [SerializeField] private float validSquatPower = 6f;
-        [SerializeField] private float hitPenalty = 15f;
-
-        [Header("Overcharge Settings")]
-        [SerializeField] private float overchargeThreshold = 100f;
-        [SerializeField] private float overchargeDuration = 8f;
-        [SerializeField] private float overchargeStartPower = 60f; // Power after overcharge ends
-
-        [Header("Visual Feedback")]
-        [SerializeField] private ParticleSystem overchargeVFX;
-        [SerializeField] private AudioClip overchargeStartSound;
-        [SerializeField] private AudioClip overchargeEndSound;
-        [SerializeField] private AudioClip powerGainSound;
+        [SerializeField] private float powerPerSquat = 15f;
+        [SerializeField] private float perfectSquatBonus = 10f;
+        [SerializeField] private float powerDecayRate = 5f;
+        [SerializeField] private float shockwaveCost = 50f;
+        [SerializeField] private bool enablePowerDecay = true;
+        [SerializeField] private float comboMultiplier = 0.1f;
+        [SerializeField] private float overchargeThreshold = 90f; // EXPLICIT: Overcharge threshold
 
         [Header("UI References")]
-        [SerializeField] private UnityEngine.UI.Slider powerSlider;
-        [SerializeField] private UnityEngine.UI.Image powerFillImage;
-        [SerializeField] private Color normalColor = Color.blue;
-        [SerializeField] private Color overchargeColor = new Color(1f, 0.84f, 0f); // Gold color
+        [SerializeField] private Slider powerSlider;
+        [SerializeField] private Text powerText;
+        [SerializeField] private Image powerFill;
+        [SerializeField] private Button shockwaveButton;
+        [SerializeField] private Text shockwaveButtonText;
 
-        // Properties
+        [Header("Visual Feedback")]
+        [SerializeField] private Color lowPowerColor = Color.red;
+        [SerializeField] private Color mediumPowerColor = Color.yellow;
+        [SerializeField] private Color highPowerColor = Color.green;
+        [SerializeField] private Color maxPowerColor = Color.cyan;
+        [SerializeField] private ParticleSystem powerGainEffect;
+        [SerializeField] private ParticleSystem maxPowerEffect;
+
+        [Header("Audio Feedback")]
+        [SerializeField] private AudioClip powerGainSound;
+        [SerializeField] private AudioClip maxPowerSound;
+        [SerializeField] private AudioClip shockwaveSound;
+
+        [Header("Shockwave Integration")]
+        [SerializeField] private ShockwaveEmitter shockwaveEmitter;
+
+        // EXPLICIT PROPERTIES - These should fix compilation errors
         public float CurrentPower { get; private set; }
         public float PowerPercentage => CurrentPower / maxPower;
-        public bool IsOvercharged { get; private set; }
-        public float OverchargeTimeRemaining { get; private set; }
+        public bool CanUseShockwave => CurrentPower >= shockwaveCost;
+        public bool IsMaxPower => Mathf.Approximately(CurrentPower, maxPower);
+        
+        // EXPLICIT: IsOvercharged property that was missing
+        public bool IsOvercharged 
+        { 
+            get { return CurrentPower >= overchargeThreshold; } 
+        }
 
-        // Private fields
         private AudioSource audioSource;
-        private Coroutine overchargeCoroutine;
-        private Tween powerBarTween;
+        private bool wasMaxPower = false;
+        private bool wasOvercharged = false;
+        private int currentCombo = 0;
 
-        void Awake()
+        private void Awake()
         {
             audioSource = GetComponent<AudioSource>();
             if (audioSource == null)
+            {
                 audioSource = gameObject.AddComponent<AudioSource>();
+                audioSource.spatialBlend = 0f;
+            }
 
-            audioSource.spatialBlend = 0f; // 2D UI sound
-            audioSource.playOnAwake = false;
+            if (shockwaveEmitter == null)
+            {
+                shockwaveEmitter = FindObjectOfType<ShockwaveEmitter>();
+            }
+
+            if (shockwaveButton != null && shockwaveButtonText == null)
+            {
+                shockwaveButtonText = shockwaveButton.GetComponentInChildren<Text>();
+            }
         }
 
-        void Start()
+        private void Start()
         {
-            InitializePowerMeter();
             SubscribeToEvents();
+            ResetPower();
+            UpdateUI();
+
+            if (shockwaveButton != null)
+            {
+                shockwaveButton.onClick.AddListener(TryUseShockwave);
+            }
         }
 
-        void Update()
+        private void Update()
         {
-            if (!IsOvercharged)
+            if (enablePowerDecay && CurrentPower > 0)
             {
-                UpdatePowerDecay();
+                float decay = powerDecayRate * Time.deltaTime;
+                ModifyPower(-decay, false);
             }
-            else
-            {
-                UpdateOverchargeTimer();
-            }
-            
             UpdateUI();
         }
 
-        void OnDestroy()
+        private void OnDestroy()
         {
             UnsubscribeFromEvents();
         }
 
-        private void InitializePowerMeter()
-        {
-            CurrentPower = 0f;
-            IsOvercharged = false;
-            OverchargeTimeRemaining = 0f;
-            
-            // Initialize UI
-            if (powerSlider != null)
-            {
-                powerSlider.minValue = 0f;
-                powerSlider.maxValue = maxPower;
-                powerSlider.value = CurrentPower;
-            }
-            
-            if (powerFillImage != null)
-            {
-                powerFillImage.color = normalColor;
-            }
-        }
-
+        // EXPLICIT EVENT SUBSCRIPTIONS - Fixed to match your CombatEvents signatures
         private void SubscribeToEvents()
         {
+            // Core events
             CombatEvents.OnValidSquat += HandleValidSquat;
-            CombatEvents.OnPlayerHit += HandlePlayerHit;
+            CombatEvents.OnPerfectSquat += HandlePerfectSquat;
+            CombatEvents.OnShockwaveActivated += HandleShockwaveUsed;
+            
+            // FIXED: Using correct event signatures from your CombatEvents
+            CombatEvents.OnComboChanged += HandleComboChanged_Float;  // Action<float>
+            CombatEvents.OnPlayerDodge += HandlePlayerDodge;
+            CombatEvents.OnDroneDestroyed += HandleDroneDestroyed_WithController;  // Action<DroneController>
         }
 
         private void UnsubscribeFromEvents()
         {
             CombatEvents.OnValidSquat -= HandleValidSquat;
-            CombatEvents.OnPlayerHit -= HandlePlayerHit;
+            CombatEvents.OnPerfectSquat -= HandlePerfectSquat;
+            CombatEvents.OnShockwaveActivated -= HandleShockwaveUsed;
+            CombatEvents.OnComboChanged -= HandleComboChanged_Float;
+            CombatEvents.OnPlayerDodge -= HandlePlayerDodge;
+            CombatEvents.OnDroneDestroyed -= HandleDroneDestroyed_WithController;
         }
 
-        private void UpdatePowerDecay()
+        // EXPLICIT EVENT HANDLERS - Matching exact signatures from your CombatEvents
+        private void HandleValidSquat(float depthNorm, float quality)
         {
-            if (CurrentPower > 0)
-            {
-                float previousPower = CurrentPower;
-                CurrentPower = Mathf.Max(0f, CurrentPower - decayPerSecond * Time.deltaTime);
-                
-                if (CurrentPower != previousPower)
-                {
-                    CombatEvents.OnPowerMeterChanged?.Invoke(CurrentPower);
-                }
-            }
-        }
-
-        private void UpdateOverchargeTimer()
-        {
-            OverchargeTimeRemaining -= Time.deltaTime;
+            float basePowerGain = powerPerSquat * depthNorm * (quality / 100f);
+            float comboBonus = basePowerGain * (currentCombo * comboMultiplier);
+            float totalGain = basePowerGain + comboBonus;
             
-            if (OverchargeTimeRemaining <= 0f)
+            ModifyPower(totalGain, true);
+            Debug.Log($"Power gained from squat: {totalGain:F1}");
+        }
+
+        private void HandlePerfectSquat(float quality)
+        {
+            float bonus = perfectSquatBonus;
+            ModifyPower(bonus, true);
+            Debug.Log($"Perfect squat bonus: {bonus:F1} power!");
+        }
+
+        private void HandleShockwaveUsed()
+        {
+            if (audioSource != null && shockwaveSound != null)
             {
-                EndOvercharge();
+                audioSource.PlayOneShot(shockwaveSound);
             }
+
+            if (shockwaveEmitter != null)
+            {
+                shockwaveEmitter.TriggerShockwave();
+            }
+            else
+            {
+                CombatEvents.OnShockwaveTriggered?.Invoke(transform.position);
+            }
+        }
+
+        // FIXED: Signature matches Action<float> from your CombatEvents
+        private void HandleComboChanged_Float(float newCombo)
+        {
+            currentCombo = (int)newCombo;
+        }
+
+        private void HandlePlayerDodge()
+        {
+            ModifyPower(2f, false);
+        }
+
+        // FIXED: Signature matches Action<DroneController> from your CombatEvents
+        private void HandleDroneDestroyed_WithController(CombatSystem.Drones.DroneController drone)
+        {
+            ModifyPower(3f, false);
+        }
+
+        private void ModifyPower(float amount, bool playFeedback = true)
+        {
+            float oldPower = CurrentPower;
+            bool wasOverchargedBefore = IsOvercharged;
+            
+            CurrentPower = Mathf.Clamp(CurrentPower + amount, 0f, maxPower);
+
+            // Check for overcharge state change
+            bool isOverchargedNow = IsOvercharged;
+            if (isOverchargedNow != wasOverchargedBefore)
+            {
+                CombatEvents.OnOverchargeStateChanged?.Invoke(isOverchargedNow);
+                wasOvercharged = isOverchargedNow;
+            }
+
+            if (amount > 0)
+            {
+                CombatEvents.OnPowerGained?.Invoke(amount);
+                if (playFeedback) PlayPowerGainFeedback();
+            }
+            else if (amount < 0)
+            {
+                CombatEvents.OnPowerSpent?.Invoke(Mathf.Abs(amount));
+            }
+
+            CombatEvents.OnPowerChanged?.Invoke(CurrentPower);
+
+            if (!wasMaxPower && IsMaxPower)
+            {
+                PlayMaxPowerFeedback();
+            }
+
+            wasMaxPower = IsMaxPower;
+        }
+
+        private void PlayPowerGainFeedback()
+        {
+            if (audioSource != null && powerGainSound != null)
+            {
+                audioSource.pitch = 1f + (PowerPercentage * 0.5f);
+                audioSource.PlayOneShot(powerGainSound);
+            }
+
+            if (powerGainEffect != null)
+            {
+                powerGainEffect.Play();
+            }
+        }
+
+        private void PlayMaxPowerFeedback()
+        {
+            if (audioSource != null && maxPowerSound != null)
+            {
+                audioSource.pitch = 1f;
+                audioSource.PlayOneShot(maxPowerSound);
+            }
+
+            if (maxPowerEffect != null)
+            {
+                maxPowerEffect.Play();
+            }
+
+            Debug.Log("MAX POWER ACHIEVED!");
         }
 
         private void UpdateUI()
         {
             if (powerSlider != null)
             {
-                // Smooth slider animation
-                if (powerBarTween != null) powerBarTween.Kill();
-                powerBarTween = DOTween.To(() => powerSlider.value, x => powerSlider.value = x, CurrentPower, 0.3f);
+                powerSlider.value = PowerPercentage;
             }
 
-            if (powerFillImage != null)
+            if (powerText != null)
             {
-                Color targetColor = IsOvercharged ? overchargeColor : normalColor;
-                
-                if (IsOvercharged)
+                powerText.text = $"Power: {CurrentPower:F0}/{maxPower:F0}";
+                if (currentCombo > 0)
                 {
-                    // Pulsing effect during overcharge
-                    float pulse = Mathf.Sin(Time.time * 8f) * 0.3f + 0.7f;
-                    targetColor = Color.Lerp(normalColor, overchargeColor, pulse);
+                    powerText.text += $" (x{currentCombo + 1})";
                 }
-                
-                powerFillImage.color = Color.Lerp(powerFillImage.color, targetColor, Time.deltaTime * 5f);
             }
-        }
 
-        private void HandleValidSquat(float depthNorm, float quality)
-        {
-            if (IsOvercharged) return; // No power gain during overcharge
-
-            bool isPerfect = quality >= 85f;
-            float powerGain = isPerfect ? perfectSquatPower : validSquatPower;
-            
-            AddPower(powerGain);
-            
-            // Play feedback
-            if (audioSource && powerGainSound)
+            if (powerFill != null)
             {
-                audioSource.pitch = isPerfect ? 1.2f : 1f;
-                audioSource.PlayOneShot(powerGainSound);
+                powerFill.color = GetPowerColor();
             }
 
-            Debug.Log($"Power gained: {powerGain} (Perfect: {isPerfect}, Quality: {quality:F1})");
+            if (shockwaveButton != null)
+            {
+                shockwaveButton.interactable = CanUseShockwave;
+                
+                if (shockwaveButtonText != null)
+                {
+                    shockwaveButtonText.text = CanUseShockwave ? 
+                        $"Shockwave ({shockwaveCost:F0})" : 
+                        $"Need {(shockwaveCost - CurrentPower):F0} More";
+                }
+            }
         }
 
-        private void HandlePlayerHit(Vector3 hitPosition)
+        private Color GetPowerColor()
         {
-            if (IsOvercharged) return; // No penalty during overcharge
+            float percentage = PowerPercentage;
 
-            ReducePower(hitPenalty);
-            Debug.Log($"Power reduced by {hitPenalty} due to player hit");
+            if (percentage >= 1f)
+                return maxPowerColor;
+            else if (percentage >= 0.75f)
+                return Color.Lerp(highPowerColor, maxPowerColor, (percentage - 0.75f) * 4f);
+            else if (percentage >= 0.5f)
+                return Color.Lerp(mediumPowerColor, highPowerColor, (percentage - 0.5f) * 4f);
+            else if (percentage >= 0.25f)
+                return Color.Lerp(lowPowerColor, mediumPowerColor, (percentage - 0.25f) * 4f);
+            else
+                return lowPowerColor;
+        }
+
+        // Public API
+        public void TryUseShockwave()
+        {
+            if (!CanUseShockwave)
+            {
+                Debug.Log($"Not enough power for shockwave! Need {shockwaveCost}, have {CurrentPower:F1}");
+                return;
+            }
+
+            ModifyPower(-shockwaveCost, false);
+            CombatEvents.OnShockwaveActivated?.Invoke();
+            Debug.Log($"Shockwave activated! Power reduced by {shockwaveCost}");
         }
 
         public void AddPower(float amount)
         {
-            if (IsOvercharged) return;
-
-            float previousPower = CurrentPower;
-            CurrentPower = Mathf.Min(maxPower, CurrentPower + amount);
-            
-            CombatEvents.OnPowerMeterChanged?.Invoke(CurrentPower);
-
-            // Check for overcharge threshold
-            if (previousPower < overchargeThreshold && CurrentPower >= overchargeThreshold)
-            {
-                TriggerOvercharge();
-            }
+            if (amount > 0) ModifyPower(amount, true);
         }
 
-        public void ReducePower(float amount)
+        public void SpendPower(float amount)
         {
-            if (IsOvercharged) return;
-
-            CurrentPower = Mathf.Max(0f, CurrentPower - amount);
-            CombatEvents.OnPowerMeterChanged?.Invoke(CurrentPower);
+            if (amount > 0) ModifyPower(-amount, false);
         }
 
-        private void TriggerOvercharge()
-        {
-            if (IsOvercharged) return;
-
-            IsOvercharged = true;
-            OverchargeTimeRemaining = overchargeDuration;
-            
-            // Visual and audio feedback
-            if (overchargeVFX) overchargeVFX.Play();
-            if (audioSource && overchargeStartSound) audioSource.PlayOneShot(overchargeStartSound);
-
-            // Screen shake or other dramatic effect
-            if (Camera.main != null)
-            {
-                Camera.main.transform.DOShakePosition(0.5f, Vector3.one * 0.1f, 10, 90f);
-            }
-
-            // Notify other systems
-            CombatEvents.OnOverchargeStateChanged?.Invoke(true);
-            
-            Debug.Log("OVERCHARGE ACTIVATED!");
-        }
-
-        private void EndOvercharge()
-        {
-            if (!IsOvercharged) return;
-
-            IsOvercharged = false;
-            OverchargeTimeRemaining = 0f;
-            CurrentPower = overchargeStartPower; // Set power to specific amount after overcharge
-
-            // Stop VFX
-            if (overchargeVFX) overchargeVFX.Stop();
-            if (audioSource && overchargeEndSound) audioSource.PlayOneShot(overchargeEndSound);
-
-            // Notify other systems
-            CombatEvents.OnOverchargeStateChanged?.Invoke(false);
-            CombatEvents.OnPowerMeterChanged?.Invoke(CurrentPower);
-            
-            Debug.Log("Overcharge ended");
-        }
-
-        // Public API for external systems
         public void ResetPower()
         {
-            if (overchargeCoroutine != null)
-            {
-                StopCoroutine(overchargeCoroutine);
-                overchargeCoroutine = null;
-            }
-
-            IsOvercharged = false;
             CurrentPower = 0f;
-            OverchargeTimeRemaining = 0f;
-            
-            if (overchargeVFX) overchargeVFX.Stop();
-            
-            CombatEvents.OnOverchargeStateChanged?.Invoke(false);
-            CombatEvents.OnPowerMeterChanged?.Invoke(CurrentPower);
+            wasMaxPower = false;
+            wasOvercharged = false;
+            currentCombo = 0;
+            CombatEvents.OnPowerChanged?.Invoke(CurrentPower);
+            UpdateUI();
+            Debug.Log("Power meter reset");
         }
 
-        public void SetPower(float amount)
+        public void SetMaxPower()
         {
-            CurrentPower = Mathf.Clamp(amount, 0f, maxPower);
-            CombatEvents.OnPowerMeterChanged?.Invoke(CurrentPower);
+            ModifyPower(maxPower - CurrentPower, true);
         }
 
         // Debug methods
         [System.Diagnostics.Conditional("UNITY_EDITOR")]
-        public void DebugAddPower(float amount)
+        public void DebugAddPower(float amount = 10f)
         {
             AddPower(amount);
         }
 
         [System.Diagnostics.Conditional("UNITY_EDITOR")]
-        public void DebugTriggerOvercharge()
+        public void DebugMaxPower()
         {
-            SetPower(overchargeThreshold);
+            SetMaxPower();
         }
 
-        void OnDrawGizmosSelected()
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
+        public void DebugUseShockwave()
         {
-            // Draw power meter visualization in scene view
-            Vector3 pos = transform.position + Vector3.up * 2f;
-            float width = 2f;
-            float height = 0.2f;
-            
-            // Background
-            Gizmos.color = Color.gray;
-            Gizmos.DrawCube(pos, new Vector3(width, height, 0.1f));
-            
-            // Power fill
-            float fillPercent = CurrentPower / maxPower;
-            Gizmos.color = IsOvercharged ? Color.yellow : Color.blue;
-            Vector3 fillPos = pos - Vector3.right * width * 0.5f * (1f - fillPercent);
-            Gizmos.DrawCube(fillPos, new Vector3(width * fillPercent, height, 0.12f));
-            
-            // Overcharge threshold line
-            if (overchargeThreshold < maxPower)
-            {
-                float thresholdPercent = overchargeThreshold / maxPower;
-                Vector3 thresholdPos = pos - Vector3.right * width * 0.5f * (1f - thresholdPercent);
-                Gizmos.color = Color.red;
-                Gizmos.DrawLine(thresholdPos + Vector3.up * height * 0.6f, 
-                               thresholdPos - Vector3.up * height * 0.6f);
-            }
+            TryUseShockwave();
         }
     }
 }

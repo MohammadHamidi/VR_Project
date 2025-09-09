@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87e11d71284d646919b7b6c81723c334, type: 3}
+  m_Name: Level2_7planks
+  m_EditorClassIdentifier: 
+  plankCount: 7
+  bridgeLength: 5.7677984
+  plankWidth: 0.4
+  plankThickness: 0.05
+  plankGap: 0.021504872
+  enablePlatforms: 1
+  platformLength: 2
+  platformWidth: 2
+  platformThickness: 0.2
+  plankMass: 1.8490157
+  platformMass: 50
+  jointSpring: 24.208895
+  jointDamper: 2
+  plankMaterial: {fileID: 2100000, guid: cf0d1bf076da844a0b05a1295ee0b28d, type: 2}
+  platformMaterial: {fileID: 2100000, guid: 9c0b6b3015a9c44e7be0ce09d4e89c1c, type: 2}
+  anchorMaterial: {fileID: 0}
+  autoPositionPlayer: 1
+  playerSpawnOffset: {x: 0, y: 1.8, z: 0}

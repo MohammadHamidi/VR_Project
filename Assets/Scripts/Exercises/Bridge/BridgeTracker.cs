@@ -7,18 +7,21 @@ using UnityEngine.Events;
 public class BridgeTracker : MonoBehaviour
 {
     [Header("Balance Settings")]
-    [SerializeField] private float maxOffsetX = 0.25f;
-    [SerializeField] private float maxOffsetZ = 0.3f;
+    [SerializeField] private float maxOffsetX = 0.5f;
+    [SerializeField] private float maxOffsetZ = 0.6f;
     [SerializeField] private float failureDelay = 0.5f;
 
     [Tooltip("Don’t allow failures for a short time after scene start.")]
     [SerializeField] private float spawnGraceSeconds = 1.25f;
 
-    [Tooltip("Don’t allow failures for a short time after each teleport.")]
-    [SerializeField] private float teleportGraceSeconds = 0.75f;
+    [Tooltip("Don't allow failures for a short time after each teleport.")]
+    [SerializeField] private float teleportGraceSeconds = 2.0f;
 
     [Tooltip("If true, balance failures are only checked after crossing has begun (~5% progress).")]
     [SerializeField] private bool failOnlyAfterStart = true;
+    
+    [Tooltip("Temporarily disable balance failures for debugging.")]
+    [SerializeField] private bool disableBalanceFailures = false;
 
     [Header("Progress Settings")]
     [SerializeField] private float progressUpdateInterval = 0.1f;
@@ -51,6 +54,7 @@ public class BridgeTracker : MonoBehaviour
     private float bridgeProgress = 0f;
     private float bridgeLength;
     private Vector3 bridgeDirection;
+    private Vector3 bridgeRight;
     private Vector3 lastPlayerPosition;
     private float lastProgressUpdate;
     private float movementSpeed;
@@ -63,6 +67,19 @@ public class BridgeTracker : MonoBehaviour
 
     // Grace window
     private float nextFailureAllowedTime = 0f;
+
+    void Awake()
+    {
+        // Ensure UnityEvents are initialized to prevent null refs when listeners are added at runtime
+        if (OnBalanceLost == null) OnBalanceLost = new UnityEvent();
+        if (OnBalanceRecovered == null) OnBalanceRecovered = new UnityEvent();
+        if (OnFailure == null) OnFailure = new UnityEvent();
+        if (OnProgressChanged == null) OnProgressChanged = new UnityEvent<float>();
+        if (OnMilestoneReached == null) OnMilestoneReached = new UnityEvent<float>();
+        if (OnBridgeStarted == null) OnBridgeStarted = new UnityEvent();
+        if (OnBridgeCompleted == null) OnBridgeCompleted = new UnityEvent();
+        if (OnMovementSpeedChanged == null) OnMovementSpeedChanged = new UnityEvent<float>();
+    }
 
     void Start()
     {
@@ -120,6 +137,9 @@ public class BridgeTracker : MonoBehaviour
         {
             bridgeLength = Vector3.Distance(bridgeStart.position, bridgeEnd.position);
             bridgeDirection = (bridgeEnd.position - bridgeStart.position).normalized;
+            // Define a stable lateral axis (right) perpendicular to the bridge direction
+            // Use world up to construct a tangent basis
+            bridgeRight = Vector3.Normalize(Vector3.Cross(Vector3.up, bridgeDirection));
         }
     }
 
@@ -130,21 +150,38 @@ public class BridgeTracker : MonoBehaviour
     {
         if (playerTransform == null) return;
 
-        // Calculate local offset from bridge root
-        Vector3 localPos = transform.InverseTransformPoint(GetPlayerPosition());
-        currentOffsetX = localPos.x;
-        currentOffsetZ = localPos.z;
+        // Calculate lateral (sideways) offset relative to the bridge axis
+        Vector3 playerPos = GetPlayerPosition();
+        if (bridgeStart != null && bridgeEnd != null && bridgeLength > 0f)
+        {
+            Vector3 startToPlayer = playerPos - bridgeStart.position;
+            // Lateral offset is the projection of startToPlayer onto bridgeRight
+            currentOffsetX = Vector3.Dot(startToPlayer, bridgeRight);
+            // Forward offset along the bridge axis (not used for balance failure anymore)
+            currentOffsetZ = Vector3.Dot(startToPlayer, bridgeDirection);
+        }
+        else
+        {
+            // Fallback to local space if bridge points not yet initialized
+            Vector3 localPos = transform.InverseTransformPoint(playerPos);
+            currentOffsetX = localPos.x;
+            currentOffsetZ = localPos.z;
+        }
 
         bool wasBalanced = isBalanced;
-        isBalanced = Mathf.Abs(currentOffsetX) <= maxOffsetX && Mathf.Abs(currentOffsetZ) <= maxOffsetZ;
+        // Only lateral offset determines balance; ignore forward/back (Z)
+        isBalanced = Mathf.Abs(currentOffsetX) <= maxOffsetX;
 
+        // Debug balance state changes
         if (wasBalanced && !isBalanced)
         {
+            Debug.LogWarning($"BridgeTracker: Balance lost! Player pos: {playerPos}, Lateral: {currentOffsetX:F3}, Forward: {currentOffsetZ:F3}, LimitX: {maxOffsetX}");
             OnBalanceLost?.Invoke();
             imbalanceTimer = 0f;
         }
         else if (!wasBalanced && isBalanced)
         {
+            Debug.Log($"BridgeTracker: Balance recovered! Local offset: ({currentOffsetX:F3}, {currentOffsetZ:F3})");
             OnBalanceRecovered?.Invoke();
         }
     }
@@ -218,38 +255,80 @@ public class BridgeTracker : MonoBehaviour
 
         if (progressUI != null && bridgeLength > 0f)
         {
+            // Update progress panel
             progressUI.UpdateProgress(
                 bridgeProgress,
                 bridgeProgress * bridgeLength,
                 (1f - bridgeProgress) * bridgeLength,
                 movementSpeed
             );
+
+            // Update balance bar with signed lateral offset
+            progressUI.UpdateBalanceBar(currentOffsetX, maxOffsetX);
         }
     }
 
     private void HandleBalanceLogic()
     {
+        // Skip balance failure logic if disabled for debugging
+        if (disableBalanceFailures)
+        {
+            if (Time.time % 5f < 0.1f) // Debug every 5 seconds
+                Debug.Log($"BridgeTracker: Balance failures disabled for debugging. Offset X: {currentOffsetX:F3}, Z: {currentOffsetZ:F3}");
+            return;
+        }
+        
         // Block failure during grace windows, and (optionally) until crossing started
-        if (Time.time < nextFailureAllowedTime) return;
-        if (failOnlyAfterStart && !hasStartedCrossing) return;
+        if (Time.time < nextFailureAllowedTime) 
+        {
+            if (Time.time % 2f < 0.1f) // Debug every 2 seconds
+                Debug.Log($"BridgeTracker: Grace period active. Time remaining: {nextFailureAllowedTime - Time.time:F1}s");
+            return;
+        }
+        if (failOnlyAfterStart && !hasStartedCrossing) 
+        {
+            if (Time.time % 2f < 0.1f) // Debug every 2 seconds
+                Debug.Log($"BridgeTracker: Waiting for crossing to start. Progress: {bridgeProgress:F2}");
+            return;
+        }
 
         if (!isBalanced)
         {
             imbalanceTimer += Time.deltaTime;
             if (imbalanceTimer >= failureDelay)
             {
+                Debug.LogError($"BridgeTracker: Balance failure triggered! Offset X: {currentOffsetX:F3}, Z: {currentOffsetZ:F3}, Timer: {imbalanceTimer:F2}s");
                 OnFailure?.Invoke();
                 TriggerFailure();
+            }
+            else if (imbalanceTimer > 0.1f && Time.time % 1f < 0.1f) // Debug every second when imbalanced
+            {
+                Debug.LogWarning($"BridgeTracker: Imbalanced! Offset X: {currentOffsetX:F3}, Z: {currentOffsetZ:F3}, Timer: {imbalanceTimer:F2}s");
             }
         }
         else
         {
+            if (imbalanceTimer > 0f)
+            {
+                Debug.Log($"BridgeTracker: Balance recovered. Offset X: {currentOffsetX:F3}, Z: {currentOffsetZ:F3}");
+            }
             imbalanceTimer = 0f;
         }
     }
 
     private void TriggerFailure()
     {
+        Debug.LogError("BridgeTracker: Triggering failure - scene will restart in 3 seconds");
+        
+        // Add a delay to prevent immediate restart and allow debugging
+        StartCoroutine(DelayedSceneRestart());
+    }
+    
+    private System.Collections.IEnumerator DelayedSceneRestart()
+    {
+        yield return new WaitForSeconds(3f);
+        
+        Debug.LogError("BridgeTracker: Restarting scene now");
         var sceneManager = FindObjectOfType<VRRehab.SceneManagement.SceneTransitionManager>();
         if (sceneManager != null)
             sceneManager.RestartCurrentScene();
